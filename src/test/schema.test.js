@@ -60,3 +60,88 @@ describe('dataSchema', () => {
     expect(() => dataSchema.parse(emptyData())).not.toThrow();
   });
 });
+
+describe('migrate — historique', () => {
+  it('initialise historique=[] si absent (compat v1.0 sans historique)', () => {
+    const v10 = {
+      version: '1.0',
+      bailleur: { nom: 'B', adresse: 'A', ville: 'V', signature: 'S' },
+      locataires: [],
+    };
+    expect(migrate(v10).historique).toEqual([]);
+  });
+
+  it('emptyData() expose historique=[]', () => {
+    expect(emptyData().historique).toEqual([]);
+  });
+
+  it('préserve une entrée d\'historique valide', () => {
+    const entry = {
+      id: 'h_123_abc',
+      dateGeneration: '2026-05-17T10:00:00.000Z',
+      moisNum: '05',
+      annee: '2026',
+      bailleur: { nom: 'B', adresse: 'A', ville: 'V', signature: 'S' },
+      locataire: { nom: 'Alice', email: '', adresse: '2 rue', loyer: 850, charges: 100, modeReglement: 'virement' },
+      loyer: 850,
+      charges: 100,
+      periodeDebut: '2026-05-01',
+      periodeFin: '2026-05-31',
+      modeReglement: 'virement',
+      dateEncaissement: '',
+    };
+    const result = migrate({ historique: [entry] });
+    expect(result.historique).toHaveLength(1);
+    expect(result.historique[0]).toMatchObject({
+      id: 'h_123_abc',
+      moisNum: '05',
+      annee: '2026',
+    });
+    expect(result.historique[0].locataire.nom).toBe('Alice');
+  });
+
+  it('normalise une entrée d\'historique incomplète (defaults)', () => {
+    const result = migrate({ historique: [{ moisNum: '05', annee: 2026 }] });
+    const h = result.historique[0];
+    expect(h.id).toMatch(/^h_/);
+    expect(h.annee).toBe('2026'); // coercé en string
+    expect(h.bailleur).toEqual({ nom: '', adresse: '', ville: '', signature: '' });
+    expect(h.locataire.nom).toBe('');
+    expect(h.loyer).toBe(0);
+    expect(h.charges).toBe(0);
+    expect(h.periodeDebut).toBe('');
+  });
+
+  it('parseImport accepte un payload sans historique', () => {
+    const v10 = {
+      bailleur: { nom: 'B', adresse: 'A', ville: 'V', signature: 'S' },
+      locataires: [{ nom: 'L', adresse: 'X', loyer: 500, charges: 0 }],
+    };
+    const parsed = parseImport(v10);
+    expect(parsed.historique).toEqual([]);
+  });
+
+  it('parseImport accepte un payload avec historique', () => {
+    const v11 = {
+      bailleur: { nom: 'B', adresse: 'A', ville: 'V', signature: 'S' },
+      locataires: [{ nom: 'L', adresse: 'X', loyer: 500, charges: 0 }],
+      historique: [
+        {
+          id: 'h_1_x',
+          dateGeneration: '2026-05-17T10:00:00.000Z',
+          moisNum: '05',
+          annee: '2026',
+          bailleur: { nom: 'B', adresse: 'A', ville: 'V', signature: 'S' },
+          locataire: { nom: 'L', adresse: 'X', loyer: 500, charges: 0 },
+          loyer: 500,
+          charges: 0,
+          periodeDebut: '2026-05-01',
+          periodeFin: '2026-05-31',
+        },
+      ],
+    };
+    const parsed = parseImport(v11);
+    expect(parsed.historique).toHaveLength(1);
+    expect(parsed.historique[0].id).toBe('h_1_x');
+  });
+});

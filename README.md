@@ -22,6 +22,7 @@ C'est exactement ce que fait cet outil. Stockage `localStorage`, génération PD
 - 🏠 **Configuration du bailleur** (nom, adresse, ville, signature)
 - ✏️ **Override mensuel** : modifier ponctuellement le loyer ou les charges pour un mois donné
 - 📧 **Préparation d'email** : ouvre votre client mail avec sujet et corps pré-remplis (PDF à attacher manuellement)
+- 📋 **Historique des quittances** : journal local de toutes les quittances émises, alerte anti-doublon, regénération à l'identique du PDF, filtres locataire/année, export XLSX
 - 💾 **Export / import JSON** : sauvegarde et restauration de toutes vos données (validées par schéma)
 - 🔢 **Conversion automatique** du montant en lettres (exigence légale)
 - ♿ **Accessible** : navigation clavier WAI-ARIA sur les onglets, modales avec focus trap
@@ -90,7 +91,7 @@ Vos données vivent dans le `localStorage` de votre navigateur, qui peut être e
 Vue synthétique — voir [PRD.md](doc/PRD.md) pour le détail.
 
 - **v1.0** ✅ Génération PDF conforme (art. 21 loi 1989), gestion locataires, export/import JSON, accessibilité ARIA.
-- **v1.1** — Historique des quittances émises, alerte anti-doublons.
+- **v1.1** ✅ Historique des quittances émises, alerte anti-doublons, export XLSX.
 - **v1.2** — Mode PWA : installable, fonctionne hors-ligne.
 - **v2.0** — Multi-bailleurs et multi-biens.
 
@@ -109,6 +110,7 @@ Les contributions sont les bienvenues !
 - [Tailwind CSS](https://tailwindcss.com/) — utility-first
 - [jsPDF](https://github.com/parallax/jsPDF) — génération PDF côté client
 - [Zod](https://zod.dev/) — validation du schéma à l'import JSON
+- [write-excel-file](https://www.npmjs.com/package/write-excel-file) — export XLSX de l'historique (chargé à la demande)
 - [Vitest](https://vitest.dev/) — tests des fonctions pures
 - `localStorage` pour la persistance, 100 % client-side
 

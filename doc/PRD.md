@@ -1,7 +1,7 @@
 # PRD — Générateur de Quittances de Loyer
 
 > Document de cadrage produit. Voir aussi : [README.md](../README.md) (doc utilisateur).
-> Statut : v1.0 finalisée, prête à publier ; roadmap v1.1+ à planifier.
+> Statut : v1.1 livrée ; roadmap v1.2+ à planifier.
 
 ## Problème
 
@@ -31,7 +31,9 @@ Les bailleurs particuliers (petits propriétaires, 1 à quelques biens) ont beso
 4. **Gratuit et open-source** — Pas de fonctionnalité payante, pas de freemium. Le code est libre.
 5. **Pérennité des données** — L'utilisateur doit pouvoir exporter ses données à tout moment dans un format ouvert (JSON).
 
-## État actuel — v1.0
+## État actuel — v1.1
+
+**v1.0 — Socle de génération PDF**
 
 - ✅ Génération de quittances PDF conformes à l'art. 21 de la loi du 6 juillet 1989 (via jsPDF)
 - ✅ Période couverte explicite sur la quittance (1er au dernier jour du mois, personnalisable)
@@ -48,16 +50,17 @@ Les bailleurs particuliers (petits propriétaires, 1 à quelques biens) ont beso
 - ✅ Responsive mobile / tablette / desktop
 - ✅ Stockage `localStorage`, 100% client-side
 
+**v1.1 — Historique des quittances émises**
+
+- ✅ Journal local de chaque génération PDF (snapshot complet : bailleur + locataire + montants + période + mode + date encaissement)
+- ✅ Alerte anti-doublon : confirmation demandée si une quittance existe déjà pour `(locataire, mois, année)`
+- ✅ Onglet « Historique » : liste triée par date desc, filtres par locataire et par année
+- ✅ Regénération PDF à partir d'une entrée d'historique (à l'identique, indépendamment des modifications ultérieures de la fiche locataire)
+- ✅ Suppression d'une entrée d'historique (avec confirmation)
+- ✅ Export XLSX de l'historique (`write-excel-file`, chargé à la demande pour ne pas alourdir le bundle initial)
+- ✅ Historique inclus dans l'export JSON global
+
 ## Roadmap
-
-### v1.1 — Historique des quittances émises
-
-**Objectif** : éviter les doublons et permettre la consultation a posteriori.
-
-- Chaque génération de PDF est enregistrée localement avec : locataire, mois, montant, date de génération, mode de paiement.
-- **Warning à la regénération** : si une quittance existe déjà pour ce locataire/mois, demander confirmation.
-- **Onglet « Historique »** : liste filtrable et triable, possibilité de regénérer un PDF à partir d'une entrée d'historique (sans toucher aux infos courantes du locataire).
-- Export de l'historique inclus dans le JSON d'export global.
 
 ### v1.2 — PWA / mode offline
 
@@ -105,7 +108,8 @@ Volontairement **hors scope** :
 | CSS | Tailwind CSS (utility-first) |
 | PDF | jsPDF (embarqué via npm, pas de CDN) |
 | Validation | Zod (import JSON et futures migrations de schéma) |
-| Tests | Vitest pour les fonctions pures (`nombreEnLettres`, période, schéma) |
+| Export XLSX | write-excel-file (chargé en lazy import) |
+| Tests | Vitest pour les fonctions pures (`nombreEnLettres`, période, schéma, historique) |
 | Stockage | `localStorage` (clé `quittances_data`) |
 
 Le tout reste **100% client-side**, build produit du HTML/CSS/JS statique déployable n'importe où.

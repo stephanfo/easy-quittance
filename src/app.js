@@ -1,9 +1,16 @@
 import { loadData, saveData } from './lib/storage.js';
 import { emptyData, parseImport, MODES_REGLEMENT } from './lib/schema.js';
 import { buildPDF } from './lib/pdf.js';
-import { defaultPeriod } from './lib/period.js';
-import { moisTexte } from './lib/format.js';
+import { defaultPeriod, formatPeriodFR } from './lib/period.js';
+import { moisTexte, formatDateFR } from './lib/format.js';
 import { toast, confirmDialog } from './lib/toast.js';
+import {
+  buildHistoriqueEntry,
+  findDoublons,
+  filterAndSort,
+  listeFiltreLocataires,
+  listeFiltreAnnees,
+} from './lib/historique.js';
 
 const MOIS_OPTIONS = [
   { value: '01', label: 'Janvier' },
@@ -48,7 +55,11 @@ export function appData() {
     // Édition locataire (previousActive : élément à refocus à la fermeture)
     editing: { open: false, index: -1, form: emptyLocataireForm(), previousActive: null },
 
-    tabsOrder: ['generate', 'locataires', 'config'],
+    // Filtres de l'onglet Historique
+    filterLocataire: '',
+    filterAnnee: '',
+
+    tabsOrder: ['generate', 'locataires', 'historique', 'config'],
 
     // Indique que des données ont été modifiées depuis le dernier export.
     // Persiste en mémoire uniquement : un refresh remet à false (l'utilisateur a vécu le risque consciemment).
@@ -271,7 +282,7 @@ export function appData() {
         loyer = parseFloat(this.loyerOverride) || loyer;
         charges = parseFloat(this.chargesOverride) || charges;
       }
-      return buildPDF({
+      const { doc, filename } = buildPDF({
         bailleur: this.data.bailleur,
         locataire: loc,
         moisNum: this.moisNum,
@@ -283,18 +294,55 @@ export function appData() {
         modeReglement: this.modeReglement || '',
         dateEncaissement: this.dateEncaissement || '',
       });
+      return { doc, filename, loyer, charges };
     },
 
-    generatePDF() {
+    async confirmDoublonIfAny() {
+      const loc = this.selectedLocataire;
+      const doublons = findDoublons(this.data.historique, loc.nom, this.moisNum, this.annee);
+      if (doublons.length === 0) return true;
+      const dernier = doublons.reduce((acc, h) => (h.dateGeneration > acc.dateGeneration ? h : acc));
+      const dateTxt = new Date(dernier.dateGeneration).toLocaleDateString('fr-FR');
+      const label = moisTexte(this.moisNum, this.annee);
+      return await confirmDialog({
+        title: 'Quittance déjà émise',
+        message: `Une quittance pour ${loc.nom} – ${label} a déjà été générée le ${dateTxt}. Voulez-vous en générer une nouvelle ?`,
+        confirmLabel: 'Regénérer',
+      });
+    },
+
+    pushHistorique({ loyer, charges }) {
+      this.data.historique.push(
+        buildHistoriqueEntry({
+          bailleur: this.data.bailleur,
+          locataire: this.selectedLocataire,
+          moisNum: this.moisNum,
+          annee: this.annee,
+          loyer,
+          charges,
+          periodeDebut: this.periodeDebut,
+          periodeFin: this.periodeFin,
+          modeReglement: this.modeReglement || '',
+          dateEncaissement: this.dateEncaissement || '',
+        }),
+      );
+      this.persist();
+      this.dirty = true;
+    },
+
+    async generatePDF() {
       if (!this.validateForGenerate()) return;
-      const { doc, filename } = this.buildAndReturn();
+      if (!(await this.confirmDoublonIfAny())) return;
+      const { doc, filename, loyer, charges } = this.buildAndReturn();
       doc.save(filename);
+      this.pushHistorique({ loyer, charges });
       toast('Quittance téléchargée', 'success');
     },
 
-    generateAndEmail() {
+    async generateAndEmail() {
       if (!this.validateForGenerate()) return;
-      const { doc, filename } = this.buildAndReturn();
+      if (!(await this.confirmDoublonIfAny())) return;
+      const { doc, filename, loyer, charges } = this.buildAndReturn();
       const blob = doc.output('blob');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -302,6 +350,8 @@ export function appData() {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+
+      this.pushHistorique({ loyer, charges });
 
       const loc = this.selectedLocataire;
       const dest = (this.emailLocataire || loc.email || '').trim();
@@ -311,6 +361,102 @@ export function appData() {
       const mailto = `mailto:${dest}?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(corps)}`;
       window.location.href = mailto;
       toast('PDF téléchargé. Pensez à l\'attacher à l\'email.', 'info', 6000);
+    },
+
+    // ----- Historique -----
+
+    get filteredHistorique() {
+      return filterAndSort(this.data.historique, {
+        locataireNom: this.filterLocataire,
+        annee: this.filterAnnee,
+      });
+    },
+
+    get historiqueLocataires() {
+      return listeFiltreLocataires(this.data.historique);
+    },
+
+    get historiqueAnnees() {
+      return listeFiltreAnnees(this.data.historique);
+    },
+
+    resetFiltresHistorique() {
+      this.filterLocataire = '';
+      this.filterAnnee = '';
+    },
+
+    regenererPDF(entry) {
+      try {
+        const { doc, filename } = buildPDF({
+          bailleur: entry.bailleur,
+          locataire: entry.locataire,
+          moisNum: entry.moisNum,
+          annee: entry.annee,
+          loyer: entry.loyer,
+          charges: entry.charges,
+          periodeDebut: entry.periodeDebut,
+          periodeFin: entry.periodeFin,
+          modeReglement: entry.modeReglement || '',
+          dateEncaissement: entry.dateEncaissement || '',
+        });
+        doc.save(filename);
+        toast('PDF regénéré', 'success');
+      } catch (err) {
+        console.error(err);
+        toast('Impossible de regénérer ce PDF', 'error');
+      }
+    },
+
+    async supprimerEntreeHistorique(id) {
+      const idx = this.data.historique.findIndex((h) => h.id === id);
+      if (idx === -1) return;
+      const entry = this.data.historique[idx];
+      const label = `${entry.locataire?.nom || ''} – ${moisTexte(entry.moisNum, entry.annee)}`;
+      const ok = await confirmDialog({
+        title: "Supprimer l'entrée d'historique",
+        message: `Supprimer la trace de la quittance « ${label} » ? Le PDF déjà téléchargé/envoyé n'est pas affecté.`,
+        confirmLabel: 'Supprimer',
+        danger: true,
+      });
+      if (!ok) return;
+      this.data.historique.splice(idx, 1);
+      this.persist();
+      this.dirty = true;
+      toast('Entrée supprimée', 'success');
+    },
+
+    async exportHistoriqueXlsx() {
+      if (this.data.historique.length === 0) {
+        toast('Aucune entrée à exporter', 'warning');
+        return;
+      }
+      try {
+        const { exportHistoriqueXlsx } = await import('./lib/xlsx-export.js');
+        await exportHistoriqueXlsx(this.filteredHistorique);
+        toast('Export XLSX téléchargé', 'success');
+      } catch (err) {
+        console.error(err);
+        toast("Erreur lors de l'export XLSX", 'error');
+      }
+    },
+
+    // Helpers d'affichage pour l'historique
+    formatPeriodeAffichee(entry) {
+      return formatPeriodFR(entry.periodeDebut, entry.periodeFin);
+    },
+
+    formatDateGeneration(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('fr-FR');
+    },
+
+    formatMoisEntry(entry) {
+      return moisTexte(entry.moisNum, entry.annee);
+    },
+
+    formatDateEncaissementEntry(entry) {
+      return entry.dateEncaissement ? formatDateFR(entry.dateEncaissement) : '';
     },
 
     exportData() {
@@ -358,6 +504,7 @@ export function appData() {
       this.persist();
       this.dirty = false;
       this.selectedLocataireIdx = '';
+      this.resetFiltresHistorique();
       toast('Données importées', 'success');
     },
   };

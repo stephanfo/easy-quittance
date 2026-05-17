@@ -68,6 +68,18 @@
       <button
         type="button"
         role="tab"
+        :aria-selected="activeTab === 'historique'"
+        :tabindex="activeTab === 'historique' ? 0 : -1"
+        id="tab-historique"
+        aria-controls="panel-historique"
+        @click="switchTab('historique')"
+        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
+        :class="activeTab === 'historique' && 'text-apple-blue !border-apple-blue'">
+        Historique
+      </button>
+      <button
+        type="button"
+        role="tab"
         :aria-selected="activeTab === 'config'"
         :tabindex="activeTab === 'config' ? 0 : -1"
         id="tab-config"
@@ -274,6 +286,111 @@
             <div class="ml-auto flex shrink-0 gap-1.5">
               <button type="button" class="btn btn-secondary btn-small" @click="openEdit(index)">✏️ Modifier</button>
               <button type="button" class="btn btn-danger btn-small" @click="deleteLocataire(index)">🗑️ Supprimer</button>
+            </div>
+          </li>
+        </template>
+      </ul>
+    </section>
+
+    <!-- Panel : Historique -->
+    <section
+      id="panel-historique"
+      role="tabpanel"
+      aria-labelledby="tab-historique"
+      tabindex="-1"
+      x-show="activeTab === 'historique'">
+      <h2 class="mb-5 text-xl font-semibold sm:text-2xl">Historique des quittances</h2>
+
+      <!-- Barre filtres + actions -->
+      <div class="card-section mb-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <div>
+            <label for="filterLocataire" class="field-label">Filtrer par locataire</label>
+            <select id="filterLocataire" class="field-input" x-model="filterLocataire">
+              <option value="">Tous les locataires</option>
+              <template x-for="nom in historiqueLocataires" :key="nom">
+                <option :value="nom" x-text="nom"></option>
+              </template>
+            </select>
+          </div>
+          <div>
+            <label for="filterAnnee" class="field-label">Filtrer par année</label>
+            <select id="filterAnnee" class="field-input" x-model="filterAnnee">
+              <option value="">Toutes les années</option>
+              <template x-for="y in historiqueAnnees" :key="y">
+                <option :value="y" x-text="y"></option>
+              </template>
+            </select>
+          </div>
+          <div class="flex items-end">
+            <button
+              type="button"
+              class="btn btn-secondary w-full sm:w-auto"
+              @click="resetFiltresHistorique()"
+              x-show="filterLocataire || filterAnnee">
+              ✕ Réinitialiser
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <p class="text-sm text-apple-muted">
+          <span x-text="filteredHistorique.length"></span>
+          <span x-text="filteredHistorique.length > 1 ? 'entrées affichées' : 'entrée affichée'"></span>
+          <span x-show="data.historique.length !== filteredHistorique.length">
+            (sur <span x-text="data.historique.length"></span> au total)
+          </span>
+        </p>
+        <button
+          type="button"
+          class="btn btn-secondary btn-small"
+          @click="exportHistoriqueXlsx()"
+          :disabled="data.historique.length === 0">
+          📊 Exporter en XLSX
+        </button>
+      </div>
+
+      <template x-if="data.historique.length === 0">
+        <p class="rounded-lg border border-apple-border bg-white p-5 text-center text-apple-muted">
+          Aucune quittance générée pour le moment. Rendez-vous sur l'onglet « Générer » pour créer votre première quittance.
+        </p>
+      </template>
+      <template x-if="data.historique.length > 0 && filteredHistorique.length === 0">
+        <p class="rounded-lg border border-apple-border bg-white p-5 text-center text-apple-muted">
+          Aucune entrée ne correspond aux filtres.
+        </p>
+      </template>
+
+      <ul
+        x-show="filteredHistorique.length > 0"
+        class="divide-y divide-apple-border overflow-hidden rounded-lg border border-apple-border bg-white">
+        <template x-for="entry in filteredHistorique" :key="entry.id">
+          <li class="flex flex-wrap items-start gap-x-4 gap-y-2 px-4 py-3 sm:items-center">
+            <div class="min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-[200px]">
+              <div class="font-semibold text-apple-text break-words" x-text="entry.locataire?.nom || '(locataire inconnu)'"></div>
+              <div class="mt-0.5 text-xs text-apple-muted" x-text="formatMoisEntry(entry)"></div>
+            </div>
+            <div class="min-w-0 flex-1 basis-full text-sm text-apple-muted sm:basis-auto">
+              <span aria-hidden="true">📅</span> <span x-text="formatPeriodeAffichee(entry)"></span>
+            </div>
+            <div class="whitespace-nowrap text-sm tabular-nums text-apple-text">
+              <span x-text="parseFloat(entry.loyer).toFixed(2)"></span>&nbsp;€
+              + <span x-text="parseFloat(entry.charges).toFixed(2)"></span>&nbsp;€
+              = <strong x-text="(parseFloat(entry.loyer) + parseFloat(entry.charges)).toFixed(2)"></strong>&nbsp;€
+            </div>
+            <div class="whitespace-nowrap text-sm text-apple-muted" x-show="entry.modeReglement">
+              <span aria-hidden="true">💳</span> <span x-text="entry.modeReglement"></span>
+            </div>
+            <div class="whitespace-nowrap text-xs text-apple-muted" x-show="entry.dateEncaissement">
+              <span aria-hidden="true">📥</span> <span x-text="formatDateEncaissementEntry(entry)"></span>
+            </div>
+            <div class="whitespace-nowrap text-xs text-apple-muted">
+              <span aria-hidden="true">🕒</span> Générée le <span x-text="formatDateGeneration(entry.dateGeneration)"></span>
+            </div>
+            <div class="ml-auto flex shrink-0 gap-1.5">
+              <button type="button" class="btn btn-secondary btn-small" @click="regenererPDF(entry)">🔁 Regénérer</button>
+              <button type="button" class="btn btn-danger btn-small" @click="supprimerEntreeHistorique(entry.id)">🗑️ Supprimer</button>
             </div>
           </li>
         </template>
