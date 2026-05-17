@@ -1,0 +1,8 @@
+options -indexes
+
+# Redirect everything to SSL
+<IfModule mod_rewrite.c>
+	RewriteEngine On
+	RewriteCond %{HTTPS} off
+	RewriteRule (.*) https://%{SERVER_NAME}/$1 [R,L]
+</IfModule>

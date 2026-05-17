@@ -1,0 +1,26 @@
+# Dépendances
+node_modules
+
+# Build & caches
+dist
+.vite
+coverage
+
+# Logs
+*.log
+
+# Variables d'environnement
+.env
+.env.local
+.env.*.local
+
+# Config locale Claude Code
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Éditeurs
+*.swp
+*.swo

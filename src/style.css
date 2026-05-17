@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: theme('fontFamily.system');
+  }
+  body {
+    background: theme('colors.apple.bg');
+    color: theme('colors.apple.text');
+  }
+  /* Empêche le zoom auto iOS sur les inputs */
+  input[type='text'],
+  input[type='email'],
+  input[type='number'],
+  input[type='date'],
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-5 py-3 text-base font-medium transition-colors;
+    @apply bg-apple-blue text-white hover:bg-apple-blue-hover;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply bg-apple-muted hover:bg-[#86868b];
+  }
+  .btn-danger {
+    @apply bg-apple-danger hover:bg-apple-danger-hover;
+  }
+  .btn-success {
+    @apply bg-apple-success hover:bg-[#00b347];
+  }
+  .btn-small {
+    @apply px-3 py-2 text-sm;
+  }
+  .field-label {
+    @apply mb-2 block font-medium text-apple-text;
+  }
+  .field-input {
+    @apply w-full rounded-lg border border-apple-border px-3 py-3 transition-colors focus:border-apple-blue focus:outline-none focus:ring-0;
+  }
+  .field-help {
+    @apply mt-1 text-xs text-apple-muted;
+  }
+  .card-section {
+    @apply rounded-lg bg-apple-bg p-4;
+  }
+}

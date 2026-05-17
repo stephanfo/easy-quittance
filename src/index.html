@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Générateur de Quittances</title>
+</head>
+<body class="p-2 sm:p-5" x-data="app" x-cloak>
+
+  <!-- Bannière : modifications non exportées -->
+  <div
+    x-show="dirty"
+    x-transition.opacity
+    role="alert"
+    aria-live="polite"
+    class="sticky top-2 z-50 mx-auto mb-3 flex max-w-5xl flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-md sm:top-5">
+    <span class="min-w-0 flex-1">
+      <span aria-hidden="true" class="mr-1">💾</span>
+      Modification sauvegardée dans le navigateur, mais pensez à exporter vos données pour ne rien perdre.
+    </span>
+    <div class="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        @click="exportData()"
+        class="inline-flex items-center gap-1.5 rounded-md bg-amber-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-amber-800">
+        📤 Exporter
+      </button>
+      <button
+        type="button"
+        @click="dirty = false"
+        aria-label="Masquer la bannière"
+        title="Masquer"
+        class="rounded-md px-2 py-1.5 text-amber-900 hover:bg-amber-100">
+        ✕
+      </button>
+    </div>
+  </div>
+
+  <div class="container mx-auto max-w-5xl rounded-xl bg-white p-5 shadow-md sm:p-8">
+    <h1 class="mb-5 text-2xl font-semibold sm:text-3xl">📄 Générateur de Quittances de Loyer</h1>
+
+    <!-- Tabs -->
+    <div class="mb-6 flex gap-1 border-b-2 border-apple-border sm:gap-2" role="tablist" aria-label="Sections" @keydown="onTabsKey($event)">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'generate'"
+        :tabindex="activeTab === 'generate' ? 0 : -1"
+        id="tab-generate"
+        aria-controls="panel-generate"
+        @click="switchTab('generate')"
+        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
+        :class="activeTab === 'generate' && 'text-apple-blue !border-apple-blue'">
+        Générer
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'locataires'"
+        :tabindex="activeTab === 'locataires' ? 0 : -1"
+        id="tab-locataires"
+        aria-controls="panel-locataires"
+        @click="switchTab('locataires')"
+        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
+        :class="activeTab === 'locataires' && 'text-apple-blue !border-apple-blue'">
+        Locataires
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'config'"
+        :tabindex="activeTab === 'config' ? 0 : -1"
+        id="tab-config"
+        aria-controls="panel-config"
+        @click="switchTab('config')"
+        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
+        :class="activeTab === 'config' && 'text-apple-blue !border-apple-blue'">
+        Configuration
+      </button>
+    </div>
+
+    <!-- Panel : Générer -->
+    <section
+      id="panel-generate"
+      role="tabpanel"
+      aria-labelledby="tab-generate"
+      tabindex="-1"
+      x-show="activeTab === 'generate'">
+      <h2 class="mb-5 text-xl font-semibold sm:text-2xl">Générer une quittance</h2>
+
+      <div class="mb-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div>
+          <label for="selectLocataire" class="field-label">Locataire</label>
+          <select
+            id="selectLocataire"
+            class="field-input text-lg font-medium"
+            x-model="selectedLocataireIdx"
+            @change="onSelectLocataire()">
+            <option value="">-- Sélectionner un locataire --</option>
+            <template x-for="(loc, idx) in data.locataires" :key="idx">
+              <option :value="idx" x-text="loc.nom"></option>
+            </template>
+          </select>
+        </div>
+
+        <div>
+          <span class="field-label">Mois</span>
+          <div class="grid grid-cols-[2fr_1fr] gap-2.5">
+            <select id="selectMois" class="field-input" x-model="moisNum" aria-label="Mois">
+              <template x-for="m in moisOptions" :key="m.value">
+                <option :value="m.value" x-text="m.label"></option>
+              </template>
+            </select>
+            <select id="selectAnnee" class="field-input" x-model="annee" aria-label="Année">
+              <template x-for="y in anneeOptions" :key="y">
+                <option :value="y" x-text="y"></option>
+              </template>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Période couverte -->
+      <div class="card-section mb-4">
+        <h3 class="mb-3 text-lg font-semibold">Période couverte</h3>
+        <div class="mb-3 flex items-center gap-2.5">
+          <input type="checkbox" id="overridePeriode" x-model="overridePeriode" class="cursor-pointer" />
+          <label for="overridePeriode" class="cursor-pointer">Personnaliser la période (sinon : 1er au dernier jour du mois)</label>
+        </div>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2" x-show="overridePeriode" x-transition>
+          <div>
+            <label for="periodeDebut" class="field-label">Du</label>
+            <input type="date" id="periodeDebut" class="field-input" x-model="periodeDebut" />
+          </div>
+          <div>
+            <label for="periodeFin" class="field-label">Au</label>
+            <input type="date" id="periodeFin" class="field-input" x-model="periodeFin" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Montants -->
+      <div class="card-section mb-4">
+        <h3 class="mb-3 text-lg font-semibold">Modifier les montants (optionnel)</h3>
+        <div class="mb-3 flex items-center gap-2.5">
+          <input
+            type="checkbox"
+            id="overrideMontants"
+            x-model="overrideMontants"
+            @change="toggleOverrideMontants()"
+            class="cursor-pointer" />
+          <label for="overrideMontants" class="cursor-pointer">Modifier le loyer pour ce mois uniquement</label>
+        </div>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2" x-show="overrideMontants" x-transition>
+          <div>
+            <label for="loyerOverride" class="field-label">Loyer (€)</label>
+            <input type="number" id="loyerOverride" step="0.01" placeholder="850" class="field-input" x-model="loyerOverride" />
+          </div>
+          <div>
+            <label for="chargesOverride" class="field-label">Charges (€)</label>
+            <input type="number" id="chargesOverride" step="0.01" placeholder="100" class="field-input" x-model="chargesOverride" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Mode de règlement + date d'encaissement -->
+      <div class="card-section mb-4">
+        <h3 class="mb-3 text-lg font-semibold">Règlement (optionnel)</h3>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label for="modeReglement" class="field-label">Mode de règlement</label>
+            <select id="modeReglement" class="field-input" x-model="modeReglement">
+              <option value="">-- Non précisé --</option>
+              <template x-for="m in modesReglement" :key="m">
+                <option :value="m" x-text="m.charAt(0).toUpperCase() + m.slice(1)"></option>
+              </template>
+            </select>
+            <p class="field-help" x-show="selectedLocataire && selectedLocataire.modeReglement">
+              Pré-rempli depuis la fiche du locataire.
+            </p>
+          </div>
+          <div>
+            <label for="dateEncaissement" class="field-label">Date d'encaissement</label>
+            <input type="date" id="dateEncaissement" class="field-input" x-model="dateEncaissement" />
+            <p class="field-help">Utile pour les locataires CAF.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Email -->
+      <div class="mb-5 mt-7">
+        <label for="emailLocataire" class="field-label">Email du locataire (optionnel)</label>
+        <input type="email" id="emailLocataire" placeholder="locataire@exemple.com" class="field-input" x-model="emailLocataire" />
+        <div class="mt-3 rounded-lg bg-apple-bg p-4 text-sm text-apple-muted" x-show="emailLocataire.trim()">
+          ℹ️ Le PDF sera téléchargé ET un lien <code>mailto:</code> sera ouvert pour préparer l'email
+          (le PDF sera à attacher manuellement, <code>mailto:</code> ne supporte pas les pièces jointes).
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <button type="button" class="btn flex-1" @click="generatePDF()">📥 Télécharger la quittance PDF</button>
+        <button type="button" class="btn btn-success flex-1" @click="generateAndEmail()">📧 Télécharger et préparer l'email</button>
+      </div>
+    </section>
+
+    <!-- Panel : Locataires -->
+    <section
+      id="panel-locataires"
+      role="tabpanel"
+      aria-labelledby="tab-locataires"
+      tabindex="-1"
+      x-show="activeTab === 'locataires'">
+      <h2 class="mb-5 text-xl font-semibold sm:text-2xl">Gestion des locataires</h2>
+
+      <div class="mb-8">
+        <h3 class="mb-4 text-lg font-semibold">Ajouter un locataire</h3>
+        <div class="mb-4">
+          <label for="nomLocataire" class="field-label">Nom complet *</label>
+          <input type="text" id="nomLocataire" placeholder="Jean Dupont" class="field-input" x-model="addForm.nom" />
+        </div>
+        <div class="mb-4">
+          <label for="emailLocataireAdd" class="field-label">Email</label>
+          <input type="email" id="emailLocataireAdd" placeholder="jean.dupont@exemple.com" class="field-input" x-model="addForm.email" />
+        </div>
+        <div class="mb-4">
+          <label for="adresseLogement" class="field-label">Adresse du logement *</label>
+          <textarea id="adresseLogement" rows="2" placeholder="15 rue de la République&#10;75001 Paris" class="field-input min-h-[80px] resize-y" x-model="addForm.adresse"></textarea>
+        </div>
+        <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label for="loyerMensuel" class="field-label">Loyer mensuel (€) *</label>
+            <input type="number" id="loyerMensuel" placeholder="850" step="0.01" class="field-input" x-model="addForm.loyer" />
+          </div>
+          <div>
+            <label for="charges" class="field-label">Charges (€)</label>
+            <input type="number" id="charges" placeholder="100" step="0.01" class="field-input" x-model="addForm.charges" />
+          </div>
+        </div>
+        <div class="mb-4">
+          <label for="modeReglementAdd" class="field-label">Mode de règlement par défaut (optionnel)</label>
+          <select id="modeReglementAdd" class="field-input" x-model="addForm.modeReglement">
+            <option value="">-- Non précisé --</option>
+            <template x-for="m in modesReglement" :key="m">
+              <option :value="m" x-text="m.charAt(0).toUpperCase() + m.slice(1)"></option>
+            </template>
+          </select>
+          <p class="field-help">Sera pré-sélectionné lors de la génération d'une quittance.</p>
+        </div>
+        <button type="button" class="btn" @click="addLocataire()">➕ Ajouter le locataire</button>
+      </div>
+
+      <h3 class="mb-4 text-lg font-semibold">Liste des locataires</h3>
+      <template x-if="data.locataires.length === 0">
+        <p class="rounded-lg border border-apple-border bg-white p-5 text-center text-apple-muted">Aucun locataire enregistré</p>
+      </template>
+      <ul x-show="data.locataires.length > 0" class="divide-y divide-apple-border overflow-hidden rounded-lg border border-apple-border bg-white">
+        <template x-for="(loc, index) in data.locataires" :key="index">
+          <li class="flex flex-wrap items-start gap-x-4 gap-y-2 px-4 py-3 sm:items-center">
+            <div class="min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-[200px]">
+              <div class="font-semibold text-apple-text break-words" x-text="loc.nom"></div>
+              <div class="mt-0.5 text-xs text-apple-muted break-all" x-show="loc.email">📧 <span x-text="loc.email"></span></div>
+            </div>
+            <div class="min-w-0 flex-1 basis-full text-sm text-apple-muted sm:basis-auto">
+              <span aria-hidden="true">📍</span> <span x-text="loc.adresse.replace(/\n/g, ', ')"></span>
+            </div>
+            <div class="whitespace-nowrap text-sm tabular-nums text-apple-text">
+              <span x-text="parseFloat(loc.loyer).toFixed(2)"></span>&nbsp;€
+              + <span x-text="parseFloat(loc.charges).toFixed(2)"></span>&nbsp;€
+              = <strong x-text="(parseFloat(loc.loyer) + parseFloat(loc.charges)).toFixed(2)"></strong>&nbsp;€
+            </div>
+            <div class="whitespace-nowrap text-sm text-apple-muted" x-show="loc.modeReglement">
+              <span aria-hidden="true">💳</span> <span x-text="loc.modeReglement"></span>
+            </div>
+            <div class="ml-auto flex shrink-0 gap-1.5">
+              <button type="button" class="btn btn-secondary btn-small" @click="openEdit(index)">✏️ Modifier</button>
+              <button type="button" class="btn btn-danger btn-small" @click="deleteLocataire(index)">🗑️ Supprimer</button>
+            </div>
+          </li>
+        </template>
+      </ul>
+    </section>
+
+    <!-- Panel : Configuration -->
+    <section
+      id="panel-config"
+      role="tabpanel"
+      aria-labelledby="tab-config"
+      tabindex="-1"
+      x-show="activeTab === 'config'">
+      <h2 class="mb-5 text-xl font-semibold sm:text-2xl">Configuration du bailleur</h2>
+
+      <div class="mb-4">
+        <label for="nomBailleur" class="field-label">Nom/Raison sociale *</label>
+        <input type="text" id="nomBailleur" placeholder="Votre nom" class="field-input" x-model="data.bailleur.nom" />
+      </div>
+      <div class="mb-4">
+        <label for="adresseBailleur" class="field-label">Adresse *</label>
+        <textarea id="adresseBailleur" rows="3" placeholder="Votre adresse complète" class="field-input min-h-[100px] resize-y" x-model="data.bailleur.adresse"></textarea>
+      </div>
+      <div class="mb-4">
+        <label for="villeBailleur" class="field-label">Ville (pour le « Fait à ») *</label>
+        <input type="text" id="villeBailleur" placeholder="Paris" class="field-input" x-model="data.bailleur.ville" />
+      </div>
+      <div class="mb-4">
+        <label for="signatureBailleur" class="field-label">Nom pour la signature *</label>
+        <input type="text" id="signatureBailleur" placeholder="Jean Martin" class="field-input" x-model="data.bailleur.signature" />
+      </div>
+      <button type="button" class="btn" @click="saveConfig()">💾 Enregistrer la configuration</button>
+
+      <hr class="my-8 border-t border-apple-border" />
+
+      <h3 class="mb-4 text-lg font-semibold">Sauvegarde des données</h3>
+      <div class="flex flex-wrap gap-2">
+        <button type="button" class="btn btn-secondary" @click="exportData()">📤 Exporter les données</button>
+        <button type="button" class="btn btn-secondary" @click="$refs.importFile.click()">📥 Importer les données</button>
+        <input type="file" x-ref="importFile" class="hidden" @change="importData($event)" accept=".json" />
+      </div>
+    </section>
+
+    <!-- Modal édition locataire -->
+    <div
+      x-show="editing.open"
+      class="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-title"
+      @keydown.escape.window="closeEdit()"
+      @click.self="closeEdit()"
+      x-cloak>
+      <div class="mt-5 w-full max-w-lg rounded-xl bg-white p-5 shadow-xl sm:mt-12">
+        <div class="mb-5 flex items-center justify-between">
+          <h2 id="edit-title" class="text-xl font-semibold">Modifier le locataire</h2>
+          <button type="button" class="bg-transparent text-3xl leading-none text-apple-muted hover:text-apple-text" @click="closeEdit()" aria-label="Fermer">&times;</button>
+        </div>
+        <div class="mb-4">
+          <label for="edit-nom" class="field-label">Nom complet</label>
+          <input type="text" id="edit-nom" class="field-input" x-model="editing.form.nom" />
+        </div>
+        <div class="mb-4">
+          <label for="edit-email" class="field-label">Email</label>
+          <input type="email" id="edit-email" class="field-input" x-model="editing.form.email" />
+        </div>
+        <div class="mb-4">
+          <label for="edit-adresse" class="field-label">Adresse du logement</label>
+          <textarea id="edit-adresse" rows="2" class="field-input min-h-[80px] resize-y" x-model="editing.form.adresse"></textarea>
+        </div>
+        <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label for="edit-loyer" class="field-label">Loyer mensuel (€)</label>
+            <input type="number" id="edit-loyer" step="0.01" class="field-input" x-model="editing.form.loyer" />
+          </div>
+          <div>
+            <label for="edit-charges" class="field-label">Charges (€)</label>
+            <input type="number" id="edit-charges" step="0.01" class="field-input" x-model="editing.form.charges" />
+          </div>
+        </div>
+        <div class="mb-4">
+          <label for="edit-mode" class="field-label">Mode de règlement par défaut</label>
+          <select id="edit-mode" class="field-input" x-model="editing.form.modeReglement">
+            <option value="">-- Non précisé --</option>
+            <template x-for="m in modesReglement" :key="m">
+              <option :value="m" x-text="m.charAt(0).toUpperCase() + m.slice(1)"></option>
+            </template>
+          </select>
+        </div>
+        <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button type="button" class="btn btn-secondary" @click="closeEdit()">Annuler</button>
+          <button type="button" class="btn" @click="saveEdit()">💾 Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>[x-cloak] { display: none !important; }</style>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
