@@ -2,56 +2,78 @@ import writeXlsxFile from 'write-excel-file/browser';
 import { formatDateFR, moisTexte } from './format.js';
 import { formatPeriodFR } from './period.js';
 
-const schema = [
+// API de write-excel-file v4 :
+// - `columns[]` (renommé depuis `schema`), chaque colonne expose `header` (objet style) + `cell` (callback retournant la valeur stylée).
+// - `writeXlsxFile(objects, { columns })` retourne un builder ; il faut appeler `.toFile(fileName)` pour déclencher le téléchargement.
+
+const HEADER_STYLE = { fontWeight: 'bold' };
+
+const columns = [
   {
-    column: 'Date génération',
-    type: String,
+    header: { value: 'N° quittance', ...HEADER_STYLE },
     width: 18,
-    value: (h) => {
-      if (!h.dateGeneration) return '';
+    cell: (h) => ({ value: h.numeroQuittance || '', type: String }),
+  },
+  {
+    header: { value: 'Date génération', ...HEADER_STYLE },
+    width: 18,
+    cell: (h) => {
+      if (!h.dateGeneration) return { value: '', type: String };
       const d = new Date(h.dateGeneration);
-      return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('fr-FR');
+      const txt = Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('fr-FR');
+      return { value: txt, type: String };
     },
   },
-  { column: 'Locataire', type: String, width: 25, value: (h) => h.locataire?.nom || '' },
-  { column: 'Mois', type: String, width: 18, value: (h) => moisTexte(h.moisNum, h.annee) },
   {
-    column: 'Période',
-    type: String,
-    width: 28,
-    value: (h) => formatPeriodFR(h.periodeDebut, h.periodeFin),
+    header: { value: 'Locataire', ...HEADER_STYLE },
+    width: 25,
+    cell: (h) => ({ value: h.locataire?.nom || '', type: String }),
   },
   {
-    column: 'Loyer (€)',
-    type: Number,
-    width: 12,
-    format: '#,##0.00',
-    value: (h) => Number(h.loyer) || 0,
-  },
-  {
-    column: 'Charges (€)',
-    type: Number,
-    width: 12,
-    format: '#,##0.00',
-    value: (h) => Number(h.charges) || 0,
-  },
-  {
-    column: 'Total (€)',
-    type: Number,
-    width: 12,
-    format: '#,##0.00',
-    value: (h) => (Number(h.loyer) || 0) + (Number(h.charges) || 0),
-  },
-  { column: 'Mode règlement', type: String, width: 15, value: (h) => h.modeReglement || '' },
-  {
-    column: "Date d'encaissement",
-    type: String,
+    header: { value: 'Mois', ...HEADER_STYLE },
     width: 18,
-    value: (h) => (h.dateEncaissement ? formatDateFR(h.dateEncaissement) : ''),
+    cell: (h) => ({ value: moisTexte(h.moisNum, h.annee) || '', type: String }),
+  },
+  {
+    header: { value: 'Période', ...HEADER_STYLE },
+    width: 28,
+    cell: (h) => ({ value: formatPeriodFR(h.periodeDebut, h.periodeFin) || '', type: String }),
+  },
+  {
+    header: { value: 'Loyer (€)', ...HEADER_STYLE },
+    width: 12,
+    cell: (h) => ({ value: Number(h.loyer) || 0, type: Number, format: '#,##0.00' }),
+  },
+  {
+    header: { value: 'Charges (€)', ...HEADER_STYLE },
+    width: 12,
+    cell: (h) => ({ value: Number(h.charges) || 0, type: Number, format: '#,##0.00' }),
+  },
+  {
+    header: { value: 'Total (€)', ...HEADER_STYLE },
+    width: 12,
+    cell: (h) => ({
+      value: (Number(h.loyer) || 0) + (Number(h.charges) || 0),
+      type: Number,
+      format: '#,##0.00',
+    }),
+  },
+  {
+    header: { value: 'Mode règlement', ...HEADER_STYLE },
+    width: 15,
+    cell: (h) => ({ value: h.modeReglement || '', type: String }),
+  },
+  {
+    header: { value: "Date d'encaissement", ...HEADER_STYLE },
+    width: 18,
+    cell: (h) => ({
+      value: h.dateEncaissement ? formatDateFR(h.dateEncaissement) : '',
+      type: String,
+    }),
   },
 ];
 
 export async function exportHistoriqueXlsx(historique) {
   const fileName = `historique_quittances_${new Date().toISOString().split('T')[0]}.xlsx`;
-  await writeXlsxFile(historique, { schema, fileName, headerStyle: { fontWeight: 'bold' } });
+  await writeXlsxFile(historique, { columns }).toFile(fileName);
 }

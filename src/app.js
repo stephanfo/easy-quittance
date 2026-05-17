@@ -10,6 +10,7 @@ import {
   filterAndSort,
   listeFiltreLocataires,
   listeFiltreAnnees,
+  nextNumeroQuittance,
 } from './lib/historique.js';
 
 const MOIS_OPTIONS = [
@@ -58,6 +59,10 @@ export function appData() {
     // Filtres de l'onglet Historique
     filterLocataire: '',
     filterAnnee: '',
+
+    // Indique si on a déjà averti l'utilisateur du fallback police (Inter indisponible).
+    // Volontairement non persisté : un refresh remet à zéro.
+    fontFallbackWarned: false,
 
     tabsOrder: ['generate', 'locataires', 'historique', 'config'],
 
@@ -155,6 +160,7 @@ export function appData() {
         loyer: parseFloat(f.loyer),
         charges: parseFloat(f.charges) || 0,
         modeReglement: f.modeReglement || '',
+        referenceBail: (f.referenceBail || '').trim(),
       });
       this.persist();
       this.dirty = true;
@@ -174,6 +180,7 @@ export function appData() {
           loyer: loc.loyer,
           charges: loc.charges,
           modeReglement: loc.modeReglement || '',
+          referenceBail: loc.referenceBail || '',
         },
         previousActive: document.activeElement,
       };
@@ -206,6 +213,7 @@ export function appData() {
         loyer: parseFloat(f.loyer),
         charges: parseFloat(f.charges) || 0,
         modeReglement: f.modeReglement || '',
+        referenceBail: (f.referenceBail || '').trim(),
       };
       this.persist();
       this.dirty = true;
@@ -241,6 +249,8 @@ export function appData() {
       b.adresse = (b.adresse || '').trim();
       b.ville = (b.ville || '').trim();
       b.signature = (b.signature || '').trim();
+      b.email = (b.email || '').trim();
+      b.telephone = (b.telephone || '').trim();
       if (!b.nom || !b.adresse || !b.ville || !b.signature) {
         toast('Veuillez remplir tous les champs obligatoires (*)', 'warning');
         return;
@@ -274,7 +284,18 @@ export function appData() {
       return true;
     },
 
-    buildAndReturn() {
+    notifyFontFallbackOnce(fontFallback) {
+      if (fontFallback && !this.fontFallbackWarned) {
+        this.fontFallbackWarned = true;
+        toast(
+          'Police Inter indisponible (réseau ?). Le PDF utilise la police par défaut.',
+          'info',
+          5000,
+        );
+      }
+    },
+
+    async buildAndReturn() {
       const loc = this.selectedLocataire;
       let loyer = loc.loyer;
       let charges = loc.charges;
@@ -282,7 +303,8 @@ export function appData() {
         loyer = parseFloat(this.loyerOverride) || loyer;
         charges = parseFloat(this.chargesOverride) || charges;
       }
-      const { doc, filename } = buildPDF({
+      const numero = nextNumeroQuittance(this.data.historique, this.moisNum, this.annee);
+      const { doc, filename, fontFallback } = await buildPDF({
         bailleur: this.data.bailleur,
         locataire: loc,
         moisNum: this.moisNum,
@@ -293,8 +315,10 @@ export function appData() {
         periodeFin: this.periodeFin,
         modeReglement: this.modeReglement || '',
         dateEncaissement: this.dateEncaissement || '',
+        numeroQuittance: numero,
       });
-      return { doc, filename, loyer, charges };
+      this.notifyFontFallbackOnce(fontFallback);
+      return { doc, filename, loyer, charges, numeroQuittance: numero };
     },
 
     async confirmDoublonIfAny() {
@@ -311,7 +335,7 @@ export function appData() {
       });
     },
 
-    pushHistorique({ loyer, charges }) {
+    pushHistorique({ loyer, charges, numeroQuittance }) {
       this.data.historique.push(
         buildHistoriqueEntry({
           bailleur: this.data.bailleur,
@@ -324,6 +348,7 @@ export function appData() {
           periodeFin: this.periodeFin,
           modeReglement: this.modeReglement || '',
           dateEncaissement: this.dateEncaissement || '',
+          numeroQuittance,
         }),
       );
       this.persist();
@@ -333,16 +358,21 @@ export function appData() {
     async generatePDF() {
       if (!this.validateForGenerate()) return;
       if (!(await this.confirmDoublonIfAny())) return;
-      const { doc, filename, loyer, charges } = this.buildAndReturn();
+      const { doc, filename, loyer, charges, numeroQuittance } = await this.buildAndReturn();
+      // On enregistre l'historique AVANT le téléchargement : si le save échoue (rare : quotas
+      // navigateur, blocage de download), au moins la trace existe et l'anti-doublon fonctionnera
+      // au prochain essai.
+      this.pushHistorique({ loyer, charges, numeroQuittance });
       doc.save(filename);
-      this.pushHistorique({ loyer, charges });
       toast('Quittance téléchargée', 'success');
     },
 
     async generateAndEmail() {
       if (!this.validateForGenerate()) return;
       if (!(await this.confirmDoublonIfAny())) return;
-      const { doc, filename, loyer, charges } = this.buildAndReturn();
+      const { doc, filename, loyer, charges, numeroQuittance } = await this.buildAndReturn();
+      this.pushHistorique({ loyer, charges, numeroQuittance });
+
       const blob = doc.output('blob');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -350,8 +380,6 @@ export function appData() {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-
-      this.pushHistorique({ loyer, charges });
 
       const loc = this.selectedLocataire;
       const dest = (this.emailLocataire || loc.email || '').trim();
@@ -385,9 +413,9 @@ export function appData() {
       this.filterAnnee = '';
     },
 
-    regenererPDF(entry) {
+    async regenererPDF(entry) {
       try {
-        const { doc, filename } = buildPDF({
+        const { doc, filename, fontFallback } = await buildPDF({
           bailleur: entry.bailleur,
           locataire: entry.locataire,
           moisNum: entry.moisNum,
@@ -398,7 +426,9 @@ export function appData() {
           periodeFin: entry.periodeFin,
           modeReglement: entry.modeReglement || '',
           dateEncaissement: entry.dateEncaissement || '',
+          numeroQuittance: entry.numeroQuittance || '',
         });
+        this.notifyFontFallbackOnce(fontFallback);
         doc.save(filename);
         toast('PDF regénéré', 'success');
       } catch (err) {
@@ -518,5 +548,6 @@ function emptyLocataireForm() {
     loyer: '',
     charges: 0,
     modeReglement: '',
+    referenceBail: '',
   };
 }

@@ -14,12 +14,13 @@ C'est exactement ce que fait cet outil. Stockage `localStorage`, génération PD
 
 ## Fonctionnalités
 
-- 📄 **Génération PDF** de quittances de loyer conformes (via [jsPDF](https://github.com/parallax/jsPDF))
+- 📄 **Génération PDF** de quittances de loyer conformes (via [jsPDF](https://github.com/parallax/jsPDF)) — mise en page pro avec n° de quittance, encart période, tableau aligné loyer/charges/total, bloc signature et pied de page légal ; rendu en police [Inter](https://rsms.me/inter/) (accents et `€` propres)
 - 🗓️ **Période couverte explicite** sur la quittance (1er au dernier jour du mois, personnalisable)
 - 💳 **Mode de règlement** (virement / chèque / espèces / autre), défaut par locataire
 - 📥 **Date d'encaissement** optionnelle (utile pour les locataires CAF)
-- 👥 **Gestion des locataires** : ajout, modification, suppression
-- 🏠 **Configuration du bailleur** (nom, adresse, ville, signature)
+- 👥 **Gestion des locataires** : ajout, modification, suppression, référence de bail optionnelle
+- 🏠 **Configuration du bailleur** (nom, adresse, ville, signature, email/téléphone optionnels)
+- 🔢 **Numérotation automatique** des quittances émises (`Q-YYYYMM-NNN`), incrémentée par mois
 - ✏️ **Override mensuel** : modifier ponctuellement le loyer ou les charges pour un mois donné
 - 📧 **Préparation d'email** : ouvre votre client mail avec sujet et corps pré-remplis (PDF à attacher manuellement)
 - 📋 **Historique des quittances** : journal local de toutes les quittances émises, alerte anti-doublon, regénération à l'identique du PDF, filtres locataire/année, export XLSX
@@ -109,6 +110,7 @@ Les contributions sont les bienvenues !
 - [Alpine.js](https://alpinejs.dev/) — réactivité HTML-first, ~15 ko gzippé
 - [Tailwind CSS](https://tailwindcss.com/) — utility-first
 - [jsPDF](https://github.com/parallax/jsPDF) — génération PDF côté client
+- [Inter](https://rsms.me/inter/) (SIL OFL) — police embarquée du PDF, chargée à la demande
 - [Zod](https://zod.dev/) — validation du schéma à l'import JSON
 - [write-excel-file](https://www.npmjs.com/package/write-excel-file) — export XLSX de l'historique (chargé à la demande)
 - [Vitest](https://vitest.dev/) — tests des fonctions pures

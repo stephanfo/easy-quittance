@@ -6,6 +6,7 @@ import {
   listeFiltreLocataires,
   listeFiltreAnnees,
   generateHistoriqueId,
+  nextNumeroQuittance,
 } from '../lib/historique.js';
 
 const bailleur = { nom: 'Bob', adresse: '1 rue', ville: 'Paris', signature: 'B.' };
@@ -209,5 +210,81 @@ describe('listeFiltreAnnees', () => {
 
   it('tolère un historique non array', () => {
     expect(listeFiltreAnnees(null)).toEqual([]);
+  });
+});
+
+describe('nextNumeroQuittance', () => {
+  it('démarre à 001 sur historique vide', () => {
+    expect(nextNumeroQuittance([], '05', '2026')).toBe('Q-202605-001');
+  });
+
+  it('démarre à 001 sur historique non array', () => {
+    expect(nextNumeroQuittance(null, '05', '2026')).toBe('Q-202605-001');
+  });
+
+  it('incrémente la séquence par (annee, mois)', () => {
+    const h = [
+      { numeroQuittance: 'Q-202605-001' },
+      { numeroQuittance: 'Q-202605-002' },
+    ];
+    expect(nextNumeroQuittance(h, '05', '2026')).toBe('Q-202605-003');
+  });
+
+  it('repart à 001 pour un autre mois', () => {
+    const h = [
+      { numeroQuittance: 'Q-202605-001' },
+      { numeroQuittance: 'Q-202605-002' },
+    ];
+    expect(nextNumeroQuittance(h, '06', '2026')).toBe('Q-202606-001');
+  });
+
+  it('repart à 001 pour une autre année', () => {
+    const h = [{ numeroQuittance: 'Q-202605-005' }];
+    expect(nextNumeroQuittance(h, '05', '2027')).toBe('Q-202705-001');
+  });
+
+  it('prend max+1 même si l\'historique a des trous (suppression)', () => {
+    const h = [
+      { numeroQuittance: 'Q-202605-001' },
+      { numeroQuittance: 'Q-202605-003' }, // 002 supprimé
+    ];
+    expect(nextNumeroQuittance(h, '05', '2026')).toBe('Q-202605-004');
+  });
+
+  it('ignore les entrées avec numeroQuittance vide ou absent', () => {
+    const h = [
+      { numeroQuittance: '' },
+      { numeroQuittance: 'Q-202605-001' },
+      {},
+    ];
+    expect(nextNumeroQuittance(h, '05', '2026')).toBe('Q-202605-002');
+  });
+
+  it('pad moisNum à 2 chiffres si l\'appelant donne un nombre brut', () => {
+    expect(nextNumeroQuittance([], 5, '2026')).toBe('Q-202605-001');
+    expect(nextNumeroQuittance([], '5', '2026')).toBe('Q-202605-001');
+  });
+});
+
+describe('buildHistoriqueEntry — numeroQuittance & nouveaux champs', () => {
+  it('inclut numeroQuittance quand fourni', () => {
+    const entry = buildHistoriqueEntry({ ...baseArgs, numeroQuittance: 'Q-202605-042' });
+    expect(entry.numeroQuittance).toBe('Q-202605-042');
+  });
+
+  it('numeroQuittance par défaut = ""', () => {
+    const entry = buildHistoriqueEntry(baseArgs);
+    expect(entry.numeroQuittance).toBe('');
+  });
+
+  it('snapshote bailleur.email / bailleur.telephone / locataire.referenceBail', () => {
+    const entry = buildHistoriqueEntry({
+      ...baseArgs,
+      bailleur: { ...bailleur, email: 'a@b.fr', telephone: '06 12' },
+      locataire: { ...locataire, referenceBail: '2024-A' },
+    });
+    expect(entry.bailleur.email).toBe('a@b.fr');
+    expect(entry.bailleur.telephone).toBe('06 12');
+    expect(entry.locataire.referenceBail).toBe('2024-A');
   });
 });

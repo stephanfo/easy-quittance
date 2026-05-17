@@ -258,6 +258,11 @@
           </select>
           <p class="field-help">Sera pré-sélectionné lors de la génération d'une quittance.</p>
         </div>
+        <div class="mb-4">
+          <label for="referenceBailAdd" class="field-label">Référence du bail (optionnel)</label>
+          <input type="text" id="referenceBailAdd" placeholder="2024-A-12" class="field-input" x-model="addForm.referenceBail" />
+          <p class="field-help">Affichée sur la quittance, par ex. « Bail n° 2024-A-12 ».</p>
+        </div>
         <button type="button" class="btn" @click="addLocataire()">➕ Ajouter le locataire</button>
       </div>
 
@@ -367,9 +372,10 @@
         class="divide-y divide-apple-border overflow-hidden rounded-lg border border-apple-border bg-white">
         <template x-for="entry in filteredHistorique" :key="entry.id">
           <li class="flex flex-wrap items-start gap-x-4 gap-y-2 px-4 py-3 sm:items-center">
-            <div class="min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-[200px]">
+            <div class="min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-[220px]">
               <div class="font-semibold text-apple-text break-words" x-text="entry.locataire?.nom || '(locataire inconnu)'"></div>
               <div class="mt-0.5 text-xs text-apple-muted" x-text="formatMoisEntry(entry)"></div>
+              <div class="mt-0.5 text-xs font-mono text-apple-muted" x-show="entry.numeroQuittance" x-text="entry.numeroQuittance"></div>
             </div>
             <div class="min-w-0 flex-1 basis-full text-sm text-apple-muted sm:basis-auto">
               <span aria-hidden="true">📅</span> <span x-text="formatPeriodeAffichee(entry)"></span>
@@ -421,6 +427,18 @@
       <div class="mb-4">
         <label for="signatureBailleur" class="field-label">Nom pour la signature *</label>
         <input type="text" id="signatureBailleur" placeholder="Jean Martin" class="field-input" x-model="data.bailleur.signature" />
+      </div>
+      <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label for="emailBailleur" class="field-label">Email (optionnel)</label>
+          <input type="email" id="emailBailleur" placeholder="contact@exemple.fr" class="field-input" x-model="data.bailleur.email" />
+          <p class="field-help">Affiché sur la quittance s'il est renseigné.</p>
+        </div>
+        <div>
+          <label for="telephoneBailleur" class="field-label">Téléphone (optionnel)</label>
+          <input type="tel" id="telephoneBailleur" placeholder="06 12 34 56 78" class="field-input" x-model="data.bailleur.telephone" />
+          <p class="field-help">Affiché sur la quittance s'il est renseigné.</p>
+        </div>
       </div>
       <button type="button" class="btn" @click="saveConfig()">💾 Enregistrer la configuration</button>
 
@@ -479,6 +497,10 @@
               <option :value="m" x-text="m.charAt(0).toUpperCase() + m.slice(1)"></option>
             </template>
           </select>
+        </div>
+        <div class="mb-4">
+          <label for="edit-referenceBail" class="field-label">Référence du bail (optionnel)</label>
+          <input type="text" id="edit-referenceBail" class="field-input" x-model="editing.form.referenceBail" />
         </div>
         <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button type="button" class="btn btn-secondary" @click="closeEdit()">Annuler</button>

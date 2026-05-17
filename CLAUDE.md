@@ -24,11 +24,12 @@ src/
   main.js              # Entrée : enregistre Alpine.data('app', …) puis Alpine.start()
   app.js               # State + méthodes du composant Alpine 'app'
   style.css            # Tailwind + composants @layer (.btn, .field-input, …)
+  assets/fonts/        # Inter-Regular.ttf, Inter-Bold.ttf (SIL OFL) — chargés en lazy via import.meta.url
   lib/
     storage.js         # load/save localStorage avec try/catch
     schema.js          # Schéma Zod + normalisation des imports (data + historique)
-    pdf.js             # Construction du PDF jsPDF (fonction pure buildPDF)
-    historique.js      # Fonctions pures historique (buildEntry, findDoublons, filter/sort, listes filtres)
+    pdf.js             # Construction async du PDF (mise en page pro, police Inter, n° quittance)
+    historique.js      # Fonctions pures historique (buildEntry, findDoublons, filter/sort, listes filtres, nextNumeroQuittance)
     xlsx-export.js     # Export XLSX de l'historique (lazy-loaded via import dynamique)
     nombre-en-lettres.js
     period.js          # 1er au dernier jour du mois, format FR
@@ -45,17 +46,17 @@ Persistance dans `localStorage` sous la clé `quittances_data` :
 ```js
 {
   version: '1.0',
-  bailleur: { nom, adresse, ville, signature },
+  bailleur: { nom, adresse, ville, signature, email, telephone },
   locataires: [
-    { nom, email, adresse, loyer, charges, modeReglement }
+    { nom, email, adresse, loyer, charges, modeReglement, referenceBail }
   ],
   historique: [
     {
-      id, dateGeneration,                 // métadonnées
-      moisNum, annee,                     // clé doublon
-      bailleur: { ... },                  // snapshot complet
-      locataire: { ... },                 // snapshot complet
-      loyer, charges,                     // montants effectifs (peuvent différer de la fiche)
+      id, numeroQuittance, dateGeneration,  // métadonnées + n° de quittance (Q-YYYYMM-NNN)
+      moisNum, annee,                       // clé doublon
+      bailleur: { ... },                    // snapshot complet (incl. email, telephone)
+      locataire: { ... },                   // snapshot complet (incl. referenceBail)
+      loyer, charges,                       // montants effectifs (peuvent différer de la fiche)
       periodeDebut, periodeFin,
       modeReglement, dateEncaissement
     }
@@ -70,7 +71,8 @@ Persistance dans `localStorage` sous la clé `quittances_data` :
 ### Flux principaux
 
 - **Alpine.data('app', appData)** ([src/app.js](src/app.js)) — single source of truth réactive. Toute mutation persiste via `persist()` (≡ `saveData(this.data)`).
-- **Génération PDF** : `buildPDF()` ([src/lib/pdf.js](src/lib/pdf.js)) est une fonction pure (input → `{ doc, filename }`), réutilisable et testable.
+- **Génération PDF** : `buildPDF()` ([src/lib/pdf.js](src/lib/pdf.js)) est **async** (charge la police Inter en lazy-load au premier appel, mémoïsée ensuite) et renvoie `{ doc, filename }`. Tous les callers (`generatePDF`, `generateAndEmail`, `regenererPDF`, `buildAndReturn`) sont async. Fallback Helvetica silencieux si fetch Inter échoue.
+- **N° de quittance** : `nextNumeroQuittance(historique, moisNum, annee)` ([src/lib/historique.js](src/lib/historique.js)) calcule le prochain n° au format `Q-YYYYMM-NNN` (incrémenté par mois). Stocké dans l'entrée d'historique (snapshot append-only — un trou dans la séquence reste un trou, on prend `max+1`).
 - **Période couverte** : auto (1er → dernier jour) via `defaultPeriod()`, surchargeable par l'utilisateur via deux champs date (case à cocher « Personnaliser la période »).
 - **Mode de règlement** : valeur par défaut stockée par locataire (`locataire.modeReglement`), surchargeable à la génération.
 - **Date d'encaissement** : transient (saisie à chaque génération si besoin).
@@ -86,7 +88,7 @@ npm install                   # première fois — si erreur de cache npm: ajout
 npm run dev                   # serveur Vite (http://localhost:5173) avec HMR
 npm run build                 # vite build → dist/
 npm run preview               # sert dist/ pour validation locale
-npm run test                  # vitest run (58 tests sur fonctions pures)
+npm run test                  # vitest run (75 tests sur fonctions pures)
 npm run test:watch            # vitest en mode watch
 ```
 

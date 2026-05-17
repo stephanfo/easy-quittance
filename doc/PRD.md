@@ -60,6 +60,18 @@ Les bailleurs particuliers (petits propriétaires, 1 à quelques biens) ont beso
 - ✅ Export XLSX de l'historique (`write-excel-file`, chargé à la demande pour ne pas alourdir le bundle initial)
 - ✅ Historique inclus dans l'export JSON global
 
+**Refonte du PDF (livrée avec v1.1)**
+
+- ✅ Mise en page pro : grille / marges constantes, hiérarchie typo, séparateurs anthracite
+- ✅ En-tête avec n° de quittance (`Q-YYYYMM-NNN`, séquencé par mois, persisté en historique) + date d'émission
+- ✅ Tableau aligné Loyer / Charges / Total perçu (en-tête anthracite, total surligné)
+- ✅ Encart « Période couverte »
+- ✅ Bloc signature dans une zone dessinée
+- ✅ Pied de page : mention art. 21 + pagination
+- ✅ Police Inter (SIL OFL) embarquée en lazy-load — accents et `€` rendus proprement (fallback Helvetica si fetch échoue)
+- ✅ Coordonnées bailleur étendues (email / téléphone optionnels)
+- ✅ Référence du bail optionnelle sur la fiche locataire
+
 ## Roadmap
 
 ### v1.2 — PWA / mode offline
@@ -106,7 +118,7 @@ Volontairement **hors scope** :
 | Build | Vite |
 | Framework | Alpine.js (HTML-first, ~15 ko gzippé) |
 | CSS | Tailwind CSS (utility-first) |
-| PDF | jsPDF (embarqué via npm, pas de CDN) |
+| PDF | jsPDF + police Inter (SIL OFL, lazy-load via `import.meta.url`) |
 | Validation | Zod (import JSON et futures migrations de schéma) |
 | Export XLSX | write-excel-file (chargé en lazy import) |
 | Tests | Vitest pour les fonctions pures (`nombreEnLettres`, période, schéma, historique) |

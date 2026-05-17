@@ -17,9 +17,11 @@ export function buildHistoriqueEntry({
   periodeFin,
   modeReglement,
   dateEncaissement,
+  numeroQuittance = '',
 }) {
   return {
     id: generateHistoriqueId(),
+    numeroQuittance: numeroQuittance || '',
     dateGeneration: new Date().toISOString(),
     moisNum: String(moisNum || ''),
     annee: String(annee || ''),
@@ -28,6 +30,8 @@ export function buildHistoriqueEntry({
       adresse: bailleur?.adresse || '',
       ville: bailleur?.ville || '',
       signature: bailleur?.signature || '',
+      email: bailleur?.email || '',
+      telephone: bailleur?.telephone || '',
     },
     locataire: {
       nom: locataire?.nom || '',
@@ -36,6 +40,7 @@ export function buildHistoriqueEntry({
       loyer: Number(locataire?.loyer) || 0,
       charges: Number(locataire?.charges) || 0,
       modeReglement: locataire?.modeReglement || '',
+      referenceBail: locataire?.referenceBail || '',
     },
     loyer: Number(loyer) || 0,
     charges: Number(charges) || 0,
@@ -44,6 +49,21 @@ export function buildHistoriqueEntry({
     modeReglement: modeReglement || '',
     dateEncaissement: dateEncaissement || '',
   };
+}
+
+export function nextNumeroQuittance(historique, moisNum, annee) {
+  const moisPad = String(moisNum || '').padStart(2, '0');
+  const prefix = `Q-${annee}${moisPad}-`;
+  let maxSeq = 0;
+  if (Array.isArray(historique)) {
+    for (const h of historique) {
+      if (typeof h?.numeroQuittance === 'string' && h.numeroQuittance.startsWith(prefix)) {
+        const n = parseInt(h.numeroQuittance.slice(prefix.length), 10);
+        if (Number.isFinite(n) && n > maxSeq) maxSeq = n;
+      }
+    }
+  }
+  return `${prefix}${String(maxSeq + 1).padStart(3, '0')}`;
 }
 
 export function findDoublons(historique, locataireNom, moisNum, annee) {

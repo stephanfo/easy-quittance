@@ -8,6 +8,8 @@ const bailleurSchema = z.object({
   adresse: z.string().default(''),
   ville: z.string().default(''),
   signature: z.string().default(''),
+  email: z.string().default(''),
+  telephone: z.string().default(''),
 });
 
 const locataireSchema = z.object({
@@ -17,6 +19,7 @@ const locataireSchema = z.object({
   loyer: z.coerce.number().nonnegative(),
   charges: z.coerce.number().nonnegative().default(0),
   modeReglement: z.string().default(''),
+  referenceBail: z.string().default(''),
 });
 
 const historiqueLocataireSnapshotSchema = z.object({
@@ -26,10 +29,12 @@ const historiqueLocataireSnapshotSchema = z.object({
   loyer: z.coerce.number().default(0),
   charges: z.coerce.number().default(0),
   modeReglement: z.string().default(''),
+  referenceBail: z.string().default(''),
 });
 
 const historiqueEntrySchema = z.object({
   id: z.string(),
+  numeroQuittance: z.string().default(''),
   dateGeneration: z.string(),
   moisNum: z.string(),
   annee: z.string(),
@@ -53,7 +58,7 @@ export const dataSchema = z.object({
 export function emptyData() {
   return {
     version: '1.0',
-    bailleur: { nom: '', adresse: '', ville: '', signature: '' },
+    bailleur: { nom: '', adresse: '', ville: '', signature: '', email: '', telephone: '' },
     locataires: [],
     historique: [],
   };
@@ -67,6 +72,8 @@ export function migrate(raw) {
     adresse: raw.bailleur?.adresse || '',
     ville: raw.bailleur?.ville || '',
     signature: raw.bailleur?.signature || '',
+    email: raw.bailleur?.email || '',
+    telephone: raw.bailleur?.telephone || '',
   };
 
   const locataires = Array.isArray(raw.locataires)
@@ -77,12 +84,14 @@ export function migrate(raw) {
         loyer: Number(l.loyer) || 0,
         charges: Number(l.charges) || 0,
         modeReglement: l.modeReglement || '',
+        referenceBail: l.referenceBail || '',
       }))
     : [];
 
   const historique = Array.isArray(raw.historique)
     ? raw.historique.map((h) => ({
         id: h?.id || generateHistoriqueId(),
+        numeroQuittance: h?.numeroQuittance || '',
         dateGeneration: h?.dateGeneration || new Date().toISOString(),
         moisNum: h?.moisNum || '',
         annee: h?.annee != null ? String(h.annee) : '',
@@ -91,6 +100,8 @@ export function migrate(raw) {
           adresse: h?.bailleur?.adresse || '',
           ville: h?.bailleur?.ville || '',
           signature: h?.bailleur?.signature || '',
+          email: h?.bailleur?.email || '',
+          telephone: h?.bailleur?.telephone || '',
         },
         locataire: {
           nom: h?.locataire?.nom || '',
@@ -99,6 +110,7 @@ export function migrate(raw) {
           loyer: Number(h?.locataire?.loyer) || 0,
           charges: Number(h?.locataire?.charges) || 0,
           modeReglement: h?.locataire?.modeReglement || '',
+          referenceBail: h?.locataire?.referenceBail || '',
         },
         loyer: Number(h?.loyer) || 0,
         charges: Number(h?.charges) || 0,

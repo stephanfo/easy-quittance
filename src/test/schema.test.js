@@ -105,7 +105,7 @@ describe('migrate — historique', () => {
     const h = result.historique[0];
     expect(h.id).toMatch(/^h_/);
     expect(h.annee).toBe('2026'); // coercé en string
-    expect(h.bailleur).toEqual({ nom: '', adresse: '', ville: '', signature: '' });
+    expect(h.bailleur).toEqual({ nom: '', adresse: '', ville: '', signature: '', email: '', telephone: '' });
     expect(h.locataire.nom).toBe('');
     expect(h.loyer).toBe(0);
     expect(h.charges).toBe(0);
@@ -143,5 +143,65 @@ describe('migrate — historique', () => {
     const parsed = parseImport(v11);
     expect(parsed.historique).toHaveLength(1);
     expect(parsed.historique[0].id).toBe('h_1_x');
+  });
+});
+
+describe('migrate — champs étendus (email/tel bailleur, referenceBail, numeroQuittance)', () => {
+  it('initialise bailleur.email et bailleur.telephone à "" si absents', () => {
+    const result = migrate({ bailleur: { nom: 'B', adresse: 'A', ville: 'V', signature: 'S' } });
+    expect(result.bailleur.email).toBe('');
+    expect(result.bailleur.telephone).toBe('');
+  });
+
+  it('préserve bailleur.email et bailleur.telephone', () => {
+    const result = migrate({
+      bailleur: { nom: 'B', adresse: 'A', ville: 'V', signature: 'S', email: 'x@y.fr', telephone: '06' },
+    });
+    expect(result.bailleur.email).toBe('x@y.fr');
+    expect(result.bailleur.telephone).toBe('06');
+  });
+
+  it('initialise locataire.referenceBail à "" si absent', () => {
+    const result = migrate({
+      locataires: [{ nom: 'L', adresse: 'X', loyer: 500 }],
+    });
+    expect(result.locataires[0].referenceBail).toBe('');
+  });
+
+  it('préserve locataire.referenceBail', () => {
+    const result = migrate({
+      locataires: [{ nom: 'L', adresse: 'X', loyer: 500, referenceBail: '2024-A' }],
+    });
+    expect(result.locataires[0].referenceBail).toBe('2024-A');
+  });
+
+  it('initialise historique[].numeroQuittance à "" si absent (compat v1.1)', () => {
+    const result = migrate({
+      historique: [
+        {
+          id: 'h_x',
+          dateGeneration: '2026-05-17T10:00:00Z',
+          moisNum: '05',
+          annee: '2026',
+          bailleur: {}, locataire: {},
+        },
+      ],
+    });
+    expect(result.historique[0].numeroQuittance).toBe('');
+  });
+
+  it('préserve historique[].numeroQuittance', () => {
+    const result = migrate({
+      historique: [
+        {
+          id: 'h_x',
+          numeroQuittance: 'Q-202605-001',
+          dateGeneration: '2026-05-17T10:00:00Z',
+          moisNum: '05', annee: '2026',
+          bailleur: {}, locataire: {},
+        },
+      ],
+    });
+    expect(result.historique[0].numeroQuittance).toBe('Q-202605-001');
   });
 });
