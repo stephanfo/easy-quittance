@@ -25,6 +25,16 @@ const columns = [
     },
   },
   {
+    header: { value: 'Bailleur', ...HEADER_STYLE },
+    width: 25,
+    cell: (h) => ({ value: h.bailleur?.nom || '', type: String }),
+  },
+  {
+    header: { value: 'Bien', ...HEADER_STYLE },
+    width: 25,
+    cell: (h) => ({ value: h.bien?.libelle || '', type: String }),
+  },
+  {
     header: { value: 'Locataire', ...HEADER_STYLE },
     width: 25,
     cell: (h) => ({ value: h.locataire?.nom || '', type: String }),

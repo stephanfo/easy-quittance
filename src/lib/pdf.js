@@ -282,13 +282,23 @@ function bailleurLines(bailleur) {
   return lines;
 }
 
-function locataireLines(locataire) {
+function locataireLines(locataire, bien) {
   const lines = [];
   if (locataire.nom) lines.push(locataire.nom);
-  if (locataire.referenceBail) lines.push({ text: `Bail n° ${locataire.referenceBail}`, muted: true });
-  if (locataire.adresse) {
+  // Co-occupants (un nom par ligne — déjà au format texte libre côté UI)
+  if (locataire.coOccupants) {
+    const cos = String(locataire.coOccupants)
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (const co of cos) lines.push(co);
+  }
+  if (locataire.referenceBail) {
+    lines.push({ text: `Bail n° ${locataire.referenceBail}`, muted: true });
+  }
+  if (bien?.adresse) {
     lines.push({ text: 'Adresse du logement loué :', muted: true });
-    lines.push(locataire.adresse);
+    lines.push(bien.adresse);
   }
   return lines;
 }
@@ -302,6 +312,7 @@ function adresseBailleurInline(bailleur) {
 
 export async function buildPDF({
   bailleur,
+  bien,
   locataire,
   moisNum,
   annee,
@@ -312,18 +323,22 @@ export async function buildPDF({
   modeReglement,
   dateEncaissement,
   numeroQuittance = '',
+  dateEmission = '',
 }) {
   const doc = new jsPDF();
   const { font, fallback: fontFallback } = await applyFont(doc);
 
-  const dateEmission = new Date().toLocaleDateString('fr-FR');
+  // dateEmission attendue au format ISO 'YYYY-MM-DD' (cohérent avec periodeDebut/periodeFin
+  // /dateEncaissement). Vide → on prend aujourd'hui. Le PDF l'affiche au format FR via formatDateFR.
+  const dateEmissionISO = dateEmission || new Date().toISOString().slice(0, 10);
+  const dateEmissionFR = formatDateFR(dateEmissionISO);
   const total = parseFloat(loyer) + parseFloat(charges);
   const moisLabel = moisTexte(moisNum, annee);
   const periodeLabel = formatPeriodFR(periodeDebut, periodeFin);
   const ctx = { page: 1, numero: numeroQuittance };
 
   // En-tête
-  const yAfterHeader = drawHeader(doc, font, { numero: numeroQuittance, dateEmission });
+  const yAfterHeader = drawHeader(doc, font, { numero: numeroQuittance, dateEmission: dateEmissionFR });
 
   // Blocs Bailleur / Locataire (deux colonnes)
   const xBailleur = M.left;
@@ -339,7 +354,7 @@ export async function buildPDF({
     x: xLocataire,
     y: yPartyTop,
     label: 'LOCATAIRE',
-    lines: locataireLines(locataire),
+    lines: locataireLines(locataire, bien),
   });
   let y = Math.max(yAfterBailleur, yAfterLocataire) + 6;
   drawSeparator(doc, y);
@@ -404,7 +419,7 @@ export async function buildPDF({
   doc.setFont(font, 'normal');
   doc.setFontSize(10);
   setText(doc, TEXT);
-  doc.text(`Fait à ${bailleur.ville || ''}, le ${dateEmission}`, M.left, y);
+  doc.text(`Fait à ${bailleur.ville || ''}, le ${dateEmissionFR}`, M.left, y);
 
   // Boîte de signature alignée à droite
   const sigX = PAGE_W - M.right - 70;

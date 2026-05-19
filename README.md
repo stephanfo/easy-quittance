@@ -18,16 +18,18 @@ C'est exactement ce que fait cet outil. Stockage `localStorage`, génération PD
 - 🗓️ **Période couverte explicite** sur la quittance (1er au dernier jour du mois, personnalisable)
 - 💳 **Mode de règlement** (virement / chèque / espèces / autre), défaut par locataire
 - 📥 **Date d'encaissement** optionnelle (utile pour les locataires CAF)
-- 👥 **Gestion des locataires** : ajout, modification, suppression, référence de bail optionnelle
-- 🏠 **Configuration du bailleur** (nom, adresse, ville, signature, email/téléphone optionnels)
-- 🔢 **Numérotation automatique** des quittances émises (`Q-YYYYMM-NNN`), incrémentée par mois
+- 🧑‍💼 **Multi-bailleurs / SCI** : gérez plusieurs bailleurs (personne physique ou morale), chacun avec sa propre numérotation comptable
+- 🏠 **Multi-biens** : un bailleur peut posséder plusieurs biens (appartement, maison, studio, local, parking…), avec adresse et référence interne
+- 👥 **Gestion des locataires** : ajout, modification, suppression, rattachés à un bien, avec référence de bail et co-occupants (colocation) optionnels
+- 🔢 **Numérotation automatique** des quittances émises (`Q-YYYYMM-NNN`), incrémentée par mois et **par bailleur**
 - ✏️ **Override mensuel** : modifier ponctuellement le loyer ou les charges pour un mois donné
 - 📧 **Préparation d'email** : ouvre votre client mail avec sujet et corps pré-remplis (PDF à attacher manuellement)
-- 📋 **Historique des quittances** : journal local de toutes les quittances émises, alerte anti-doublon, regénération à l'identique du PDF, filtres locataire/année, export XLSX
+- 📋 **Historique des quittances** : journal local de toutes les quittances émises, alerte anti-doublon, regénération à l'identique du PDF, filtres bailleur/bien/locataire/année, export XLSX
 - 💾 **Export / import JSON** : sauvegarde et restauration de toutes vos données (validées par schéma)
 - 🔢 **Conversion automatique** du montant en lettres (exigence légale)
 - ♿ **Accessible** : navigation clavier WAI-ARIA sur les onglets, modales avec focus trap
 - 📱 **Responsive** : utilisable depuis un téléphone, une tablette ou un ordinateur
+- 📲 **Installable comme PWA** : ajoutable à l'écran d'accueil (mobile, desktop), fonctionne hors-ligne après la première visite
 
 ## Démo
 
@@ -55,9 +57,9 @@ npm run test:watch    # vitest en mode watch
 
 ### Premier usage (dans l'app)
 
-1. Onglet **Configuration** : renseignez vos informations de bailleur (nom, adresse, ville, signature).
-2. Onglet **Locataires** : ajoutez vos locataires (nom, adresse du logement, loyer, charges, mode de règlement par défaut).
-3. Onglet **Générer** : sélectionnez un locataire, un mois, ajustez la période ou le mode de règlement si besoin, puis cliquez sur « Télécharger la quittance PDF ».
+1. Onglet **Patrimoine** : créez un bailleur (nom, adresse, ville, signature), puis ajoutez un ou plusieurs biens (libellé, adresse, type) rattachés à ce bailleur.
+2. Onglet **Locataires** : ajoutez vos locataires en choisissant le bien loué (loyer, charges, mode de règlement par défaut ; co-occupants si colocation).
+3. Onglet **Générer** : sélectionnez un bailleur puis un locataire, un mois, ajustez la période ou le mode de règlement si besoin, puis cliquez sur « Télécharger la quittance PDF ».
 
 ## Hébergement
 
@@ -85,7 +87,7 @@ Vos données vivent dans le `localStorage` de votre navigateur, qui peut être e
 - un nettoyage agressif des données de site
 - un changement de navigateur ou d'appareil
 
-**Utilisez régulièrement le bouton « Exporter les données »** (onglet Configuration). Cela télécharge un fichier JSON que vous pouvez sauvegarder sur votre cloud, votre disque dur, ou ailleurs. Le bouton « Importer les données » permet de restaurer ce fichier sur le même ou un autre navigateur.
+**Utilisez régulièrement le bouton « Exporter les données »** (onglet Patrimoine). Cela télécharge un fichier JSON que vous pouvez sauvegarder sur votre cloud, votre disque dur, ou ailleurs. Le bouton « Importer les données » permet de restaurer ce fichier sur le même ou un autre navigateur.
 
 ## Roadmap
 
@@ -93,8 +95,9 @@ Vue synthétique — voir [PRD.md](doc/PRD.md) pour le détail.
 
 - **v1.0** ✅ Génération PDF conforme (art. 21 loi 1989), gestion locataires, export/import JSON, accessibilité ARIA.
 - **v1.1** ✅ Historique des quittances émises, alerte anti-doublons, export XLSX.
-- **v1.2** — Mode PWA : installable, fonctionne hors-ligne.
-- **v2.0** — Multi-bailleurs et multi-biens.
+- **v1.2** ✅ Mode PWA : installable, fonctionne hors-ligne, prompt de mise à jour.
+- **v2.0** ✅ Multi-bailleurs / multi-biens, colocations (co-occupants), onglet Patrimoine, migration automatique depuis v1.x.
+- **v2.1** 🚧 Signature image et logo bailleur sur le PDF, reçu de dépôt de garantie, contraste renforcé, détection localStorage saturé.
 
 ## Contribuer
 

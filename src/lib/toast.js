@@ -69,13 +69,16 @@ function trapFocus(container, previousActive) {
   };
 }
 
-export function confirmDialog({
-  title = 'Confirmation',
-  message,
-  confirmLabel = 'Confirmer',
-  cancelLabel = 'Annuler',
-  danger = false,
-} = {}) {
+const BUTTON_VARIANTS = {
+  primary: 'bg-apple-blue hover:bg-apple-blue-hover text-white',
+  danger: 'bg-apple-danger hover:bg-apple-danger-hover text-white',
+  secondary: 'bg-apple-muted hover:bg-[#86868b] text-white',
+};
+
+// Modal générique à N choix. Renvoie la `value` du bouton cliqué, ou null sur Escape/backdrop.
+// `choices[]` : { value, label, variant: 'primary'|'secondary'|'danger', autoFocus?: bool }
+// Le bouton avec `autoFocus: true` reçoit le focus initial (par défaut : le premier).
+export function choiceDialog({ title = 'Confirmation', message, choices = [] } = {}) {
   const root = ensureModalRoot();
   const previousActive = document.activeElement;
 
@@ -87,27 +90,29 @@ export function confirmDialog({
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-labelledby', 'confirm-title');
 
+    // Template structurel statique — pas d'interpolation utilisateur ici, on injecte le texte
+    // ensuite via .textContent (cf. CLAUDE.md sur la convention XSS).
     overlay.innerHTML = `
-      <div class="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+      <div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
         <h2 id="confirm-title" class="mb-3 text-xl font-semibold text-apple-text"></h2>
-        <p class="mb-5 text-sm text-apple-muted whitespace-pre-wrap"></p>
-        <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button type="button" data-action="cancel"
-            class="rounded-lg bg-apple-muted px-4 py-2 text-white hover:bg-[#86868b]"></button>
-          <button type="button" data-action="confirm"
-            class="rounded-lg px-4 py-2 text-white"></button>
-        </div>
+        <p class="mb-6 text-sm text-apple-muted whitespace-pre-wrap"></p>
+        <div data-actions class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"></div>
       </div>`;
 
     overlay.querySelector('#confirm-title').textContent = title;
     overlay.querySelector('p').textContent = message;
-    const cancelBtn = overlay.querySelector('[data-action="cancel"]');
-    const confirmBtn = overlay.querySelector('[data-action="confirm"]');
-    cancelBtn.textContent = cancelLabel;
-    confirmBtn.textContent = confirmLabel;
-    confirmBtn.className += danger
-      ? ' bg-apple-danger hover:bg-apple-danger-hover'
-      : ' bg-apple-blue hover:bg-apple-blue-hover';
+
+    const actionsEl = overlay.querySelector('[data-actions]');
+    const buttons = choices.map((choice) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      const variant = BUTTON_VARIANTS[choice.variant] || BUTTON_VARIANTS.secondary;
+      btn.className = `rounded-lg px-4 py-2 ${variant}`;
+      btn.textContent = choice.label;
+      btn.addEventListener('click', () => cleanup(choice.value));
+      actionsEl.appendChild(btn);
+      return { btn, choice };
+    });
 
     root.appendChild(overlay);
 
@@ -116,7 +121,7 @@ export function confirmDialog({
     function onKey(e) {
       if (e.key === 'Escape') {
         e.preventDefault();
-        cleanup(false);
+        cleanup(null);
       }
     }
 
@@ -127,14 +132,34 @@ export function confirmDialog({
       resolve(result);
     }
 
-    cancelBtn.addEventListener('click', () => cleanup(false));
-    confirmBtn.addEventListener('click', () => cleanup(true));
     overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) cleanup(false);
+      if (e.target === overlay) cleanup(null);
     });
     document.addEventListener('keydown', onKey);
 
-    // Sur action destructive on focuse l'annulation par défaut (évite la validation réflexe par Entrée).
-    setTimeout(() => (danger ? cancelBtn : confirmBtn).focus(), 0);
+    setTimeout(() => {
+      const target = buttons.find((b) => b.choice.autoFocus) || buttons[0];
+      target?.btn.focus();
+    }, 0);
   });
+}
+
+// Wrapper binaire historique : conserve l'API booléenne pour les callsites existants.
+export async function confirmDialog({
+  title = 'Confirmation',
+  message,
+  confirmLabel = 'Confirmer',
+  cancelLabel = 'Annuler',
+  danger = false,
+} = {}) {
+  const result = await choiceDialog({
+    title,
+    message,
+    choices: [
+      // Sur action destructive on focuse l'annulation par défaut (évite la validation réflexe par Entrée).
+      { value: false, label: cancelLabel, variant: 'secondary', autoFocus: danger },
+      { value: true, label: confirmLabel, variant: danger ? 'danger' : 'primary', autoFocus: !danger },
+    ],
+  });
+  return result === true;
 }

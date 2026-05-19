@@ -6,3 +6,14 @@ options -indexes
 	RewriteCond %{HTTPS} off
 	RewriteRule (.*) https://%{SERVER_NAME}/$1 [R,L]
 </IfModule>
+
+# PWA — éviter que sw.js et manifest soient cachés longtemps,
+# sinon les utilisateurs restent bloqués sur une vieille version.
+<IfModule mod_headers.c>
+	<FilesMatch "(sw\.js|workbox-[^/]+\.js|manifest\.webmanifest)$">
+		Header set Cache-Control "no-cache, no-store, must-revalidate"
+	</FilesMatch>
+	<FilesMatch "^index\.html$">
+		Header set Cache-Control "no-cache"
+	</FilesMatch>
+</IfModule>

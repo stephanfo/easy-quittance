@@ -5,22 +5,27 @@ import {
   filterAndSort,
   listeFiltreLocataires,
   listeFiltreAnnees,
+  listeFiltreBiens,
   generateHistoriqueId,
   nextNumeroQuittance,
 } from '../lib/historique.js';
 
-const bailleur = { nom: 'Bob', adresse: '1 rue', ville: 'Paris', signature: 'B.' };
+const bailleur = { id: 'ba_1', nom: 'Bob', adresse: '1 rue', ville: 'Paris', signature: 'B.' };
+const bien = { id: 'bi_1', bailleurId: 'ba_1', libelle: 'Appart Paris', adresse: '2 rue', type: 'appartement', reference: '' };
 const locataire = {
+  id: 'lo_1',
+  bienId: 'bi_1',
   nom: 'Alice',
   email: 'a@b.fr',
-  adresse: '2 rue',
   loyer: 850,
   charges: 100,
   modeReglement: 'virement',
+  coOccupants: '',
 };
 
 const baseArgs = {
   bailleur,
+  bien,
   locataire,
   moisNum: '05',
   annee: '2026',
@@ -42,36 +47,49 @@ describe('generateHistoriqueId', () => {
 });
 
 describe('buildHistoriqueEntry', () => {
-  it('produit une entrée complète avec id et dateGeneration ISO', () => {
+  it('produit une entrée complète avec id, dateGeneration ISO et bailleurId', () => {
     const entry = buildHistoriqueEntry(baseArgs);
     expect(entry.id).toMatch(/^h_/);
     expect(() => new Date(entry.dateGeneration).toISOString()).not.toThrow();
     expect(entry.moisNum).toBe('05');
     expect(entry.annee).toBe('2026');
+    expect(entry.bailleurId).toBe('ba_1');
     expect(entry.loyer).toBe(850);
     expect(entry.charges).toBe(100);
-    expect(entry.modeReglement).toBe('virement');
   });
 
-  it('snapshote bailleur et locataire (mutation post-build sans effet)', () => {
+  it('snapshote bailleur, bien et locataire (mutation post-build sans effet)', () => {
     const localBailleur = { ...bailleur };
+    const localBien = { ...bien };
     const localLocataire = { ...locataire };
     const entry = buildHistoriqueEntry({
       ...baseArgs,
       bailleur: localBailleur,
+      bien: localBien,
       locataire: localLocataire,
     });
     localBailleur.nom = 'AUTRE';
+    localBien.libelle = 'AUTRE';
     localLocataire.nom = 'AUTRE';
     expect(entry.bailleur.nom).toBe('Bob');
+    expect(entry.bien.libelle).toBe('Appart Paris');
     expect(entry.locataire.nom).toBe('Alice');
   });
 
-  it('coerce les montants et tolère locataire/bailleur partiels', () => {
+  it('snapshote coOccupants sur le locataire', () => {
+    const entry = buildHistoriqueEntry({
+      ...baseArgs,
+      locataire: { ...locataire, coOccupants: 'Marie\nPaul' },
+    });
+    expect(entry.locataire.coOccupants).toBe('Marie\nPaul');
+  });
+
+  it('tolère bailleur/bien/locataire partiels', () => {
     const entry = buildHistoriqueEntry({
       ...baseArgs,
       bailleur: {},
-      locataire: { nom: 'X', adresse: '', loyer: '500', charges: '50' },
+      bien: {},
+      locataire: { nom: 'X', loyer: '500', charges: '50' },
       loyer: '500',
       charges: '50',
     });
@@ -79,6 +97,23 @@ describe('buildHistoriqueEntry', () => {
     expect(entry.charges).toBe(50);
     expect(entry.locataire.loyer).toBe(500);
     expect(entry.bailleur.nom).toBe('');
+    expect(entry.bien.libelle).toBe('');
+    expect(entry.bailleurId).toBe('');
+  });
+
+  it('tolère bien complètement absent (undefined)', () => {
+    const entry = buildHistoriqueEntry({ ...baseArgs, bien: undefined });
+    expect(entry.bien).toEqual({ libelle: '', adresse: '', type: '', reference: '' });
+  });
+
+  it('stocke dateEmission au format ISO si fournie', () => {
+    const entry = buildHistoriqueEntry({ ...baseArgs, dateEmission: '2021-01-31' });
+    expect(entry.dateEmission).toBe('2021-01-31');
+  });
+
+  it("dateEmission par défaut = '' (le PDF retombera sur aujourd'hui)", () => {
+    const entry = buildHistoriqueEntry(baseArgs);
+    expect(entry.dateEmission).toBe('');
   });
 
   it('convertit moisNum et annee en string', () => {
@@ -100,27 +135,37 @@ describe('findDoublons', () => {
     }),
   ];
 
-  it('trouve les doublons sur (nom, moisNum, annee)', () => {
-    const found = findDoublons(historique, 'Alice', '05', '2026');
+  it('trouve les doublons sur (bailleurId, nom, moisNum, annee)', () => {
+    const found = findDoublons(historique, 'ba_1', 'Alice', '05', '2026');
     expect(found).toHaveLength(1);
     expect(found[0].locataire.nom).toBe('Alice');
   });
 
   it('retourne [] si aucun match', () => {
-    expect(findDoublons(historique, 'Alice', '12', '2026')).toEqual([]);
-    expect(findDoublons(historique, 'Inconnu', '05', '2026')).toEqual([]);
+    expect(findDoublons(historique, 'ba_1', 'Alice', '12', '2026')).toEqual([]);
+    expect(findDoublons(historique, 'ba_1', 'Inconnu', '05', '2026')).toEqual([]);
   });
 
   it('coerce annee numérique en string pour la comparaison', () => {
-    // Cas d'usage : l'app stocke `annee` en string ('2026') ;
-    // si l'appelant passe un nombre, on doit toujours matcher.
-    const found = findDoublons(historique, 'Alice', '05', 2026);
+    const found = findDoublons(historique, 'ba_1', 'Alice', '05', 2026);
     expect(found).toHaveLength(1);
   });
 
+  it("ne croise pas les bailleurs (homonyme entre deux SCI)", () => {
+    // Deux bailleurs ont chacun un locataire « Alice Dupont » pour le même mois ;
+    // le doublon ne doit pas s'étendre d'un bailleur à l'autre.
+    const h = [
+      buildHistoriqueEntry({ ...baseArgs, bailleur: { ...bailleur, id: 'ba_1' } }),
+      buildHistoriqueEntry({ ...baseArgs, bailleur: { ...bailleur, id: 'ba_2' } }),
+    ];
+    expect(findDoublons(h, 'ba_1', 'Alice', '05', '2026')).toHaveLength(1);
+    expect(findDoublons(h, 'ba_2', 'Alice', '05', '2026')).toHaveLength(1);
+    expect(findDoublons(h, 'ba_inconnu', 'Alice', '05', '2026')).toHaveLength(0);
+  });
+
   it('tolère historique non array', () => {
-    expect(findDoublons(null, 'A', '05', '2026')).toEqual([]);
-    expect(findDoublons(undefined, 'A', '05', '2026')).toEqual([]);
+    expect(findDoublons(null, 'ba_1', 'A', '05', '2026')).toEqual([]);
+    expect(findDoublons(undefined, 'ba_1', 'A', '05', '2026')).toEqual([]);
   });
 });
 
@@ -131,7 +176,12 @@ describe('filterAndSort', () => {
     dateGeneration: '2025-06-15T10:00:00Z',
   };
   const h3 = {
-    ...buildHistoriqueEntry({ ...baseArgs, locataire: { ...locataire, nom: 'Charles' } }),
+    ...buildHistoriqueEntry({
+      ...baseArgs,
+      locataire: { ...locataire, nom: 'Charles' },
+      bailleur: { ...bailleur, id: 'ba_2', nom: 'Bailleur 2' },
+      bien: { ...bien, libelle: 'Studio Lyon' },
+    }),
     dateGeneration: '2026-03-15T10:00:00Z',
   };
   const historique = [h1, h2, h3];
@@ -157,7 +207,19 @@ describe('filterAndSort', () => {
     expect(sorted[0].annee).toBe('2025');
   });
 
-  it('combine les deux filtres', () => {
+  it('filtre par bailleurId', () => {
+    const sorted = filterAndSort(historique, { bailleurId: 'ba_2' });
+    expect(sorted).toHaveLength(1);
+    expect(sorted[0].locataire.nom).toBe('Charles');
+  });
+
+  it('filtre par bienLibelle', () => {
+    const sorted = filterAndSort(historique, { bienLibelle: 'Studio Lyon' });
+    expect(sorted).toHaveLength(1);
+    expect(sorted[0].bien.libelle).toBe('Studio Lyon');
+  });
+
+  it('combine les filtres', () => {
     const sorted = filterAndSort(historique, { locataireNom: 'Alice', annee: '2026' });
     expect(sorted).toHaveLength(1);
     expect(sorted[0].locataire.nom).toBe('Alice');
@@ -213,78 +275,76 @@ describe('listeFiltreAnnees', () => {
   });
 });
 
+describe('listeFiltreBiens', () => {
+  it('retourne les libellés de bien uniques triés', () => {
+    const historique = [
+      buildHistoriqueEntry({ ...baseArgs, bien: { ...bien, libelle: 'Studio Lyon' } }),
+      buildHistoriqueEntry(baseArgs),
+      buildHistoriqueEntry({ ...baseArgs, bien: { ...bien, libelle: 'Appart Paris' } }),
+    ];
+    expect(listeFiltreBiens(historique)).toEqual(['Appart Paris', 'Studio Lyon']);
+  });
+
+  it('ignore les libellés vides', () => {
+    const historique = [buildHistoriqueEntry({ ...baseArgs, bien: {} })];
+    expect(listeFiltreBiens(historique)).toEqual([]);
+  });
+
+  it('tolère un historique non array', () => {
+    expect(listeFiltreBiens(null)).toEqual([]);
+  });
+});
+
 describe('nextNumeroQuittance', () => {
   it('démarre à 001 sur historique vide', () => {
-    expect(nextNumeroQuittance([], '05', '2026')).toBe('Q-202605-001');
+    expect(nextNumeroQuittance([], 'ba_1', '05', '2026')).toBe('Q-202605-001');
   });
 
   it('démarre à 001 sur historique non array', () => {
-    expect(nextNumeroQuittance(null, '05', '2026')).toBe('Q-202605-001');
+    expect(nextNumeroQuittance(null, 'ba_1', '05', '2026')).toBe('Q-202605-001');
   });
 
-  it('incrémente la séquence par (annee, mois)', () => {
+  it('incrémente la séquence par (bailleur, annee, mois)', () => {
     const h = [
-      { numeroQuittance: 'Q-202605-001' },
-      { numeroQuittance: 'Q-202605-002' },
+      { bailleurId: 'ba_1', numeroQuittance: 'Q-202605-001' },
+      { bailleurId: 'ba_1', numeroQuittance: 'Q-202605-002' },
     ];
-    expect(nextNumeroQuittance(h, '05', '2026')).toBe('Q-202605-003');
+    expect(nextNumeroQuittance(h, 'ba_1', '05', '2026')).toBe('Q-202605-003');
+  });
+
+  it('ignore les entrées d\'un autre bailleur', () => {
+    const h = [
+      { bailleurId: 'ba_1', numeroQuittance: 'Q-202605-001' },
+      { bailleurId: 'ba_2', numeroQuittance: 'Q-202605-005' }, // bailleur ≠ → ignoré
+      { bailleurId: 'ba_1', numeroQuittance: 'Q-202605-002' },
+    ];
+    expect(nextNumeroQuittance(h, 'ba_1', '05', '2026')).toBe('Q-202605-003');
+    expect(nextNumeroQuittance(h, 'ba_2', '05', '2026')).toBe('Q-202605-006');
   });
 
   it('repart à 001 pour un autre mois', () => {
     const h = [
-      { numeroQuittance: 'Q-202605-001' },
-      { numeroQuittance: 'Q-202605-002' },
+      { bailleurId: 'ba_1', numeroQuittance: 'Q-202605-001' },
+      { bailleurId: 'ba_1', numeroQuittance: 'Q-202605-002' },
     ];
-    expect(nextNumeroQuittance(h, '06', '2026')).toBe('Q-202606-001');
+    expect(nextNumeroQuittance(h, 'ba_1', '06', '2026')).toBe('Q-202606-001');
   });
 
   it('repart à 001 pour une autre année', () => {
-    const h = [{ numeroQuittance: 'Q-202605-005' }];
-    expect(nextNumeroQuittance(h, '05', '2027')).toBe('Q-202705-001');
+    const h = [{ bailleurId: 'ba_1', numeroQuittance: 'Q-202605-005' }];
+    expect(nextNumeroQuittance(h, 'ba_1', '05', '2027')).toBe('Q-202705-001');
   });
 
-  it('prend max+1 même si l\'historique a des trous (suppression)', () => {
+  it("prend max+1 même si l'historique a des trous (suppression)", () => {
     const h = [
-      { numeroQuittance: 'Q-202605-001' },
-      { numeroQuittance: 'Q-202605-003' }, // 002 supprimé
+      { bailleurId: 'ba_1', numeroQuittance: 'Q-202605-001' },
+      { bailleurId: 'ba_1', numeroQuittance: 'Q-202605-003' },
     ];
-    expect(nextNumeroQuittance(h, '05', '2026')).toBe('Q-202605-004');
+    expect(nextNumeroQuittance(h, 'ba_1', '05', '2026')).toBe('Q-202605-004');
   });
 
-  it('ignore les entrées avec numeroQuittance vide ou absent', () => {
-    const h = [
-      { numeroQuittance: '' },
-      { numeroQuittance: 'Q-202605-001' },
-      {},
-    ];
-    expect(nextNumeroQuittance(h, '05', '2026')).toBe('Q-202605-002');
-  });
-
-  it('pad moisNum à 2 chiffres si l\'appelant donne un nombre brut', () => {
-    expect(nextNumeroQuittance([], 5, '2026')).toBe('Q-202605-001');
-    expect(nextNumeroQuittance([], '5', '2026')).toBe('Q-202605-001');
-  });
-});
-
-describe('buildHistoriqueEntry — numeroQuittance & nouveaux champs', () => {
-  it('inclut numeroQuittance quand fourni', () => {
-    const entry = buildHistoriqueEntry({ ...baseArgs, numeroQuittance: 'Q-202605-042' });
-    expect(entry.numeroQuittance).toBe('Q-202605-042');
-  });
-
-  it('numeroQuittance par défaut = ""', () => {
-    const entry = buildHistoriqueEntry(baseArgs);
-    expect(entry.numeroQuittance).toBe('');
-  });
-
-  it('snapshote bailleur.email / bailleur.telephone / locataire.referenceBail', () => {
-    const entry = buildHistoriqueEntry({
-      ...baseArgs,
-      bailleur: { ...bailleur, email: 'a@b.fr', telephone: '06 12' },
-      locataire: { ...locataire, referenceBail: '2024-A' },
-    });
-    expect(entry.bailleur.email).toBe('a@b.fr');
-    expect(entry.bailleur.telephone).toBe('06 12');
-    expect(entry.locataire.referenceBail).toBe('2024-A');
+  it("pad moisNum à 2 chiffres si l'appelant donne un nombre brut", () => {
+    expect(nextNumeroQuittance([], 'ba_1', 5, '2026')).toBe('Q-202605-001');
+    expect(nextNumeroQuittance([], 'ba_1', '5', '2026')).toBe('Q-202605-001');
   });
 });

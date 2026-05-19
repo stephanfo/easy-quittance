@@ -1,7 +1,7 @@
 # PRD — Générateur de Quittances de Loyer
 
 > Document de cadrage produit. Voir aussi : [README.md](../README.md) (doc utilisateur).
-> Statut : v1.1 livrée ; roadmap v1.2+ à planifier.
+> Statut : v2.0 livrée · v2.1 en cours.
 
 ## Problème
 
@@ -31,7 +31,7 @@ Les bailleurs particuliers (petits propriétaires, 1 à quelques biens) ont beso
 4. **Gratuit et open-source** — Pas de fonctionnalité payante, pas de freemium. Le code est libre.
 5. **Pérennité des données** — L'utilisateur doit pouvoir exporter ses données à tout moment dans un format ouvert (JSON).
 
-## État actuel — v1.1
+## État actuel — v2.0
 
 **v1.0 — Socle de génération PDF**
 
@@ -72,32 +72,37 @@ Les bailleurs particuliers (petits propriétaires, 1 à quelques biens) ont beso
 - ✅ Coordonnées bailleur étendues (email / téléphone optionnels)
 - ✅ Référence du bail optionnelle sur la fiche locataire
 
-## Roadmap
+**v1.2 — PWA / mode offline**
 
-### v1.2 — PWA / mode offline
+- ✅ Manifest web + Service Worker (Workbox via `vite-plugin-pwa`) — précache complet des assets buildés (HTML, JS, CSS, polices, icônes)
+- ✅ Icônes PWA générées depuis un SVG source ([public/icon.svg](../public/icon.svg)) : 64, 192, 512, maskable, apple-touch, favicon ICO/SVG
+- ✅ Meta tags PWA dans [src/index.html](../src/index.html) (theme-color, apple-mobile-web-app-*, icônes)
+- ✅ Bannière d'installation discrète, dismissible (flag localStorage `quittance_pwa_install_dismissed`, ne re-spamme pas)
+- ✅ Toast de mise à jour : quand un nouveau SW est prêt, l'utilisateur voit « Nouvelle version disponible · Recharger »
+- ✅ Logique encapsulée dans [src/lib/pwa.js](../src/lib/pwa.js) ; helpers purs testés par Vitest
+- ✅ Headers Cache-Control no-cache pour `sw.js`, `workbox-*.js`, `manifest.webmanifest`, `index.html` ([.htaccess](../.htaccess))
 
-**Objectif** : installable sur mobile/desktop, fonctionne sans connexion.
+**v2.0 — Multi-bailleurs / multi-biens / colocations**
 
-- **Manifest** + **Service Worker** pour cache-first.
-- Icônes PWA (192px, 512px).
-- Bannière d'installation discrète sur mobile.
+Refonte du modèle de données : `bailleurs[] → biens[] → locataires[] → historique[]` (un locataire est rattaché à un bien, un bien à un bailleur).
 
-### v2.0 — Multi-bailleurs / multi-biens
+- ✅ Nouvel onglet **Patrimoine** regroupant CRUD bailleurs + CRUD biens (avec sauvegarde JSON déplacée dans cet onglet)
+- ✅ **Bailleurs multiples** : chacun avec ses propres infos (nom, adresse, ville, signature, email, téléphone) et sa propre numérotation `Q-YYYYMM-NNN`
+- ✅ **Biens étendus** : libellé + adresse + type (`appartement` / `maison` / `chambre` / `local` / `parking` / `autre`) + référence interne optionnelle
+- ✅ **Sélecteur bailleur + locataire** dans l'onglet Générer (cascade : le choix d'un bailleur filtre les locataires), avec auto-sélection si un seul bailleur existe
+- ✅ **Colocations** : champ texte libre `coOccupants` sur le locataire (un nom par ligne), affichés sur la quittance sous le locataire principal
+- ✅ **Filtres historique étendus** : bailleur · bien · locataire · année
+- ✅ **Export XLSX enrichi** : colonnes Bailleur et Bien ajoutées
+- ✅ **Suppression en cascade** (avec confirmation détaillant l'impact) : supprimer un bailleur supprime ses biens et leurs locataires. L'historique est **toujours conservé** (journal légal append-only)
+- ✅ **Anti-doublon scopé par bailleur** : deux bailleurs peuvent avoir un locataire homonyme sans fausse alerte
 
-**Objectif** : couvrir le cas réaliste où un même utilisateur gère plusieurs biens ou plusieurs SCI.
+**v2.1 — Personnalisation PDF et robustesse données** *(en cours)*
 
-Refonte du modèle de données :
-
-```
-bailleurs[]
-  └── biens[]
-        └── locataires[]
-              └── historique[]
-```
-
-- **Sélecteur de bailleur** dans l'onglet « Générer ».
-- **Migration automatique** depuis le schéma v1.x : l'unique bailleur existant devient `bailleurs[0]`, ses locataires sont rattachés à `biens[0]`.
-- **Gestion des colocations** : possibilité d'avoir plusieurs noms sur une même quittance.
+- 🚧 **Signature image** du bailleur (upload local, base64, affichée sur la quittance à la place du nom en texte)
+- 🚧 **Logo bailleur** optionnel dans l'en-tête PDF (utile SCI / société civile)
+- 🚧 **Reçu de dépôt de garantie** : génération d'un document distinct + champ `depotGarantie` (montant) sur la fiche locataire
+- 🚧 **Contraste accessibilité renforcé** : textes mutés passés de ~4.1:1 à ~5.5:1 (WCAG AAA pour le corps de texte)
+- 🚧 **Détection localStorage saturé** : alerte utilisateur quand l'espace de stockage approche la limite (~5 Mo) + proposition d'archivage (export JSON + purge entrées >2 ans)
 
 ## Non-objectifs
 
