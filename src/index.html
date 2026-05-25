@@ -2,11 +2,11 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="description" content="Générateur de quittances de loyer local-first, gratuit, open-source." />
   <meta name="theme-color" content="#0071e3" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Quittance" />
   <link rel="icon" href="./favicon.ico" sizes="48x48" />
   <link rel="icon" href="./icon.svg" sizes="any" type="image/svg+xml" />
@@ -21,7 +21,7 @@
     x-transition.opacity
     role="alert"
     aria-live="polite"
-    class="sticky top-2 z-50 mx-auto mb-3 flex max-w-5xl flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-md sm:top-5">
+    class="sticky top-[max(0.5rem,env(safe-area-inset-top))] z-50 mx-auto mb-3 flex max-w-5xl flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-md sm:top-5">
     <span class="min-w-0 flex-1">
       <span aria-hidden="true" class="mr-1">💾</span>
       Modification sauvegardée dans le navigateur, mais pensez à exporter vos données pour ne rien perdre.
@@ -44,11 +44,11 @@
     </div>
   </div>
 
-  <div class="container mx-auto max-w-5xl rounded-xl bg-white p-5 shadow-md sm:p-8">
+  <div class="container mx-auto max-w-5xl rounded-xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-md sm:p-8 sm:pb-[max(2rem,env(safe-area-inset-bottom))]">
     <h1 class="mb-5 text-2xl font-semibold sm:text-3xl">📄 Générateur de Quittances de Loyer</h1>
 
     <!-- Tabs -->
-    <div class="mb-6 flex gap-1 border-b-2 border-apple-border sm:gap-2" role="tablist" aria-label="Sections" @keydown="onTabsKey($event)">
+    <div class="scrollbar-tabs -mx-2 mb-6 flex gap-1 overflow-x-auto border-b-2 border-apple-border px-2 sm:gap-2" role="tablist" aria-label="Sections" @keydown="onTabsKey($event)">
       <button
         type="button"
         role="tab"
@@ -171,7 +171,7 @@
 
       <div class="mb-5">
         <span class="field-label">Mois</span>
-        <div class="grid grid-cols-[2fr_1fr] gap-2.5 max-w-md">
+        <div class="grid grid-cols-2 gap-2.5 max-w-md sm:grid-cols-[2fr_1fr]">
           <select
             id="selectMois"
             class="field-input"
@@ -438,7 +438,7 @@
             <div class="whitespace-nowrap text-sm text-apple-muted" x-show="loc.modeReglement">
               <span aria-hidden="true">💳</span> <span x-text="loc.modeReglement"></span>
             </div>
-            <div class="ml-auto flex shrink-0 gap-1.5">
+            <div class="flex w-full shrink-0 justify-end gap-2 sm:ml-auto sm:w-auto">
               <button type="button" class="btn btn-secondary btn-small" @click="openEditLocataire(loc.id)">✏️ Modifier</button>
               <button type="button" class="btn btn-danger btn-small" @click="deleteLocataire(loc.id)">🗑️ Supprimer</button>
             </div>
@@ -458,7 +458,7 @@
 
       <!-- Barre filtres + actions -->
       <div class="card-section mb-4">
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
           <div>
             <label for="filterType" class="field-label">Type</label>
             <select id="filterType" class="field-input" x-model="filterType">
@@ -548,7 +548,7 @@
                 <div class="font-semibold text-apple-text break-words" x-text="entry.locataire?.nom || '(locataire inconnu)'"></div>
                 <span
                   x-show="isRecuDGEntry(entry)"
-                  class="inline-flex items-center rounded bg-apple-bg px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-apple-muted"
+                  class="inline-flex items-center rounded bg-apple-bg px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-apple-muted"
                   x-text="labelTypeEntry(entry)"
                 ></span>
               </div>
@@ -605,7 +605,7 @@
             <div class="whitespace-nowrap text-xs text-apple-muted">
               <span aria-hidden="true">🕒</span> Générée le <span x-text="formatDateGeneration(entry.dateGeneration)"></span>
             </div>
-            <div class="ml-auto flex shrink-0 gap-1.5">
+            <div class="flex w-full shrink-0 justify-end gap-2 sm:ml-auto sm:w-auto">
               <button type="button" class="btn btn-secondary btn-small" @click="regenererPDF(entry)">🔁 Regénérer</button>
               <button type="button" class="btn btn-danger btn-small" @click="supprimerEntreeHistorique(entry.id)">🗑️ Supprimer</button>
             </div>
@@ -646,7 +646,7 @@
             <div class="text-sm text-apple-muted">
               <span x-text="biensDuBailleur(b.id).length"></span>&nbsp;bien(s)
             </div>
-            <div class="ml-auto flex shrink-0 gap-1.5">
+            <div class="flex w-full shrink-0 justify-end gap-2 sm:ml-auto sm:w-auto">
               <button type="button" class="btn btn-secondary btn-small" @click="openEditBailleur(b.id)">✏️ Modifier</button>
               <button type="button" class="btn btn-danger btn-small" @click="deleteBailleur(b.id)">🗑️ Supprimer</button>
             </div>
@@ -687,7 +687,7 @@
               <div>👤 <span x-text="bailleurById(bien.bailleurId)?.nom || '?'"></span></div>
               <div class="text-xs"><span x-text="data.locataires.filter(l => l.bienId === bien.id).length"></span>&nbsp;locataire(s)</div>
             </div>
-            <div class="ml-auto flex shrink-0 gap-1.5">
+            <div class="flex w-full shrink-0 justify-end gap-2 sm:ml-auto sm:w-auto">
               <button type="button" class="btn btn-secondary btn-small" @click="openEditBien(bien.id)">✏️ Modifier</button>
               <button type="button" class="btn btn-danger btn-small" @click="deleteBien(bien.id)">🗑️ Supprimer</button>
             </div>
@@ -887,17 +887,17 @@
     <!-- Modal locataire (création + édition) -->
     <div
       x-show="editingLocataire.open"
-      class="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-black/50 p-4"
+      class="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="edit-title"
       @keydown.escape.window="closeLocataireModal()"
       @click.self="closeLocataireModal()"
       x-cloak>
-      <div class="mt-5 w-full max-w-lg rounded-xl bg-white p-5 shadow-xl sm:mt-12">
+      <div class="my-4 w-full max-w-lg rounded-xl bg-white p-5 shadow-xl sm:my-12">
         <div class="mb-5 flex items-center justify-between">
           <h2 id="edit-title" class="text-xl font-semibold" x-text="editingLocataire.mode === 'create' ? 'Ajouter un locataire' : 'Modifier le locataire'"></h2>
-          <button type="button" class="bg-transparent text-3xl leading-none text-apple-muted hover:text-apple-text" @click="closeLocataireModal()" aria-label="Fermer">&times;</button>
+          <button type="button" class="-m-2 inline-flex h-10 w-10 items-center justify-center bg-transparent text-3xl leading-none text-apple-muted hover:text-apple-text" @click="closeLocataireModal()" aria-label="Fermer">&times;</button>
         </div>
         <div class="mb-4">
           <label for="edit-bienId" class="field-label">Bien loué *</label>
@@ -964,17 +964,17 @@
     <!-- Modal bailleur (création + édition) -->
     <div
       x-show="editingBailleur.open"
-      class="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-black/50 p-4"
+      class="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="edit-bailleur-title"
       @keydown.escape.window="closeBailleurModal()"
       @click.self="closeBailleurModal()"
       x-cloak>
-      <div class="mt-5 w-full max-w-lg rounded-xl bg-white p-5 shadow-xl sm:mt-12">
+      <div class="my-4 w-full max-w-lg rounded-xl bg-white p-5 shadow-xl sm:my-12">
         <div class="mb-5 flex items-center justify-between">
           <h2 id="edit-bailleur-title" class="text-xl font-semibold" x-text="editingBailleur.mode === 'create' ? 'Ajouter un bailleur' : 'Modifier le bailleur'"></h2>
-          <button type="button" class="bg-transparent text-3xl leading-none text-apple-muted hover:text-apple-text" @click="closeBailleurModal()" aria-label="Fermer">&times;</button>
+          <button type="button" class="-m-2 inline-flex h-10 w-10 items-center justify-center bg-transparent text-3xl leading-none text-apple-muted hover:text-apple-text" @click="closeBailleurModal()" aria-label="Fermer">&times;</button>
         </div>
         <div class="mb-4">
           <label for="edit-bailleur-nom" class="field-label">Nom/Raison sociale *</label>
@@ -1079,17 +1079,17 @@
     <!-- Modal bien (création + édition) -->
     <div
       x-show="editingBien.open"
-      class="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-black/50 p-4"
+      class="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="edit-bien-title"
       @keydown.escape.window="closeBienModal()"
       @click.self="closeBienModal()"
       x-cloak>
-      <div class="mt-5 w-full max-w-lg rounded-xl bg-white p-5 shadow-xl sm:mt-12">
+      <div class="my-4 w-full max-w-lg rounded-xl bg-white p-5 shadow-xl sm:my-12">
         <div class="mb-5 flex items-center justify-between">
           <h2 id="edit-bien-title" class="text-xl font-semibold" x-text="editingBien.mode === 'create' ? 'Ajouter un bien' : 'Modifier le bien'"></h2>
-          <button type="button" class="bg-transparent text-3xl leading-none text-apple-muted hover:text-apple-text" @click="closeBienModal()" aria-label="Fermer">&times;</button>
+          <button type="button" class="-m-2 inline-flex h-10 w-10 items-center justify-center bg-transparent text-3xl leading-none text-apple-muted hover:text-apple-text" @click="closeBienModal()" aria-label="Fermer">&times;</button>
         </div>
         <div class="mb-4">
           <label for="edit-bien-bailleurId" class="field-label">Bailleur propriétaire *</label>

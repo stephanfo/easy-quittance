@@ -9,6 +9,8 @@
   body {
     background: theme('colors.apple.bg');
     color: theme('colors.apple.text');
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
   /* Empêche le zoom auto iOS sur les inputs */
   input[type='text'],
@@ -37,7 +39,26 @@
     @apply bg-apple-success hover:bg-[#00b347];
   }
   .btn-small {
-    @apply px-3 py-2 text-sm;
+    @apply px-3 py-2 text-sm min-h-[44px];
+  }
+  .scrollbar-tabs {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 0.5rem;
+  }
+  .scrollbar-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-tabs > [role='tab'] {
+    scroll-snap-align: start;
+    scroll-margin-inline: 1rem;
+  }
+  @media (max-width: 640px) {
+    .scrollbar-tabs {
+      -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+      mask-image: linear-gradient(to right, black 0, black calc(100% - 24px), transparent);
+    }
   }
   .field-label {
     @apply mb-2 block font-medium text-apple-text;
