@@ -64,7 +64,7 @@
     @apply mb-2 block font-medium text-apple-text;
   }
   .field-input {
-    @apply w-full rounded-lg border border-apple-border px-3 py-3 transition-colors focus:border-apple-blue focus:outline-none focus:ring-0;
+    @apply w-full rounded-lg border border-apple-border px-3 py-3 transition-colors focus:border-apple-blue focus:outline-none focus:ring-2 focus:ring-apple-blue/40;
   }
   .field-help {
     @apply mt-1 text-xs text-apple-muted;
@@ -72,4 +72,102 @@
   .card-section {
     @apply rounded-lg bg-apple-bg p-4;
   }
+  /* Sticky CTA mobile : conteneur d'actions de génération qui reste collé en bas
+     de la vue sur petit écran. Désactivé en sm+ — rendu identique à l'actuel.
+     ATTENTION : les marges latérales -1.25rem compensent le `p-5` du container
+     parent (src/index.html, div.container). Si le padding du container change
+     (ex. `p-6`), il faut mettre à jour ces valeurs en miroir, sinon le CTA ne
+     déborde plus en pleine largeur du viewport. */
+  .actions-cta {
+    @apply flex flex-col gap-2 sm:flex-row sm:flex-wrap;
+  }
+  @media (max-width: 640px) {
+    .actions-cta {
+      position: sticky;
+      bottom: 0;
+      z-index: 30;
+      margin-left: -1.25rem;
+      margin-right: -1.25rem;
+      padding: 0.75rem 1.25rem max(0.75rem, env(safe-area-inset-bottom));
+      background: var(--surface-cta, theme('colors.apple.bg'));
+      border-top: 1px solid theme('colors.apple.border');
+      box-shadow: 0 -4px 12px -8px rgba(0, 0, 0, 0.15);
+    }
+  }
+}
+
+/* --- Accessibilité : focus visible sur boutons --- */
+.btn:focus-visible {
+  outline: 2px solid theme('colors.apple.blue');
+  outline-offset: 2px;
+}
+
+/* --- Préférence utilisateur : mouvement réduit --- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* --- Dark mode auto (prefers-color-scheme) ---
+   On n'utilise pas les variants Tailwind `dark:` (trop de surface à tagger) :
+   on surcharge les classes utilitaires effectivement utilisées sur les surfaces.
+   Le PDF généré par jsPDF reste indépendant — il n'utilise aucune CSS var.       */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-cta: #1c1c1e;
+  }
+  html {
+    color-scheme: dark;
+  }
+  body {
+    background: #1c1c1e;
+    color: #f5f5f7;
+  }
+  .bg-white {
+    background-color: #2c2c2e !important;
+  }
+  .bg-apple-bg {
+    background-color: #1c1c1e !important;
+  }
+  .text-apple-text {
+    color: #f5f5f7 !important;
+  }
+  .text-apple-muted {
+    color: #a1a1a6 !important;
+  }
+  .border-apple-border {
+    border-color: #3a3a3c !important;
+  }
+  /* Bannières d'alerte : on garde la teinte mais on l'assombrit pour éviter le
+     blanc éclatant sur fond sombre. */
+  .bg-amber-50 {
+    background-color: rgba(120, 53, 15, 0.35) !important;
+  }
+  .text-amber-900 {
+    color: #fcd34d !important;
+  }
+  .border-amber-300 {
+    border-color: rgba(245, 158, 11, 0.55) !important;
+  }
+  .bg-red-50 {
+    background-color: rgba(127, 29, 29, 0.4) !important;
+  }
+  .text-red-900 {
+    color: #fca5a5 !important;
+  }
+  .border-red-300 {
+    border-color: rgba(248, 113, 113, 0.55) !important;
+  }
+  /* Inputs : assurer que le placeholder et le texte saisis restent lisibles. */
+  .field-input {
+    background-color: #2c2c2e;
+    color: #f5f5f7;
+  }
+  /* Toggles / cases à cocher gardent leur rendu natif via color-scheme: dark. */
 }

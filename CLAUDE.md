@@ -32,6 +32,7 @@ src/
     historique.js      # Fonctions pures historique (buildEntry, buildRecuEntry, findDoublons[Recu], filter/sort, nextNumeroQuittance, nextNumeroRecu, resolveBailleurForRender)
     xlsx-export.js     # Export XLSX de l'historique (lazy-loaded via import dynamique)
     email-template.js  # renderTemplate(str, vars) — substitution {placeholder} pour les emails personnalisables (mailto)
+    share.js           # sharePDFIfPossible(blob, filename, nav?) — Web Share API natif, fallback transparent vers doc.save()
     pwa.js             # SW register (prompt mode), bannière d'install, toast de mise à jour
     nombre-en-lettres.js
     period.js          # 1er au dernier jour du mois, format FR

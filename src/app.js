@@ -20,6 +20,7 @@ import { buildPDF, buildRecuDGPDF } from './lib/pdf.js';
 import { defaultPeriod, formatPeriodFR } from './lib/period.js';
 import { moisTexte, formatDateFR } from './lib/format.js';
 import { toast, confirmDialog, choiceDialog } from './lib/toast.js';
+import { sharePDFIfPossible } from './lib/share.js';
 import {
   buildHistoriqueEntry,
   buildHistoriqueRecuEntry,
@@ -181,6 +182,17 @@ export function appData() {
         this.dgSelectedLocataireId = locs.length === 1 ? locs[0].id : '';
       });
       this.$watch('dgSelectedLocataireId', () => this.onDgSelectLocataire());
+
+      // Routing par URL param (?tab=...) — utilisé par les shortcuts du manifest PWA.
+      // Passe par switchTab pour bénéficier des effets de bord centraux (flush templates, etc.).
+      try {
+        const requested = new URLSearchParams(window.location.search).get('tab');
+        if (requested && this.tabsOrder.includes(requested) && requested !== this.activeTab) {
+          this.switchTab(requested, { focusPanel: false });
+        }
+      } catch {
+        // URLSearchParams indisponible (très anciens navigateurs) : on ignore.
+      }
     },
 
     // ---------- Accesseurs ----------
@@ -973,7 +985,9 @@ export function appData() {
       if (!this.validateBaseSelection()) return;
       const built = await this._resolveAndBuild();
       if (!built) return;
-      built.doc.save(built.filename);
+      const blob = built.doc.output('blob');
+      const shared = await sharePDFIfPossible(blob, built.filename);
+      if (!shared) built.doc.save(built.filename);
       toast(built.reissued ? 'PDF réédité' : 'Quittance téléchargée', 'success');
     },
 
@@ -1199,7 +1213,9 @@ export function appData() {
     async generateRecuDG() {
       const built = await this._resolveAndBuildRecuDG();
       if (!built) return;
-      built.doc.save(built.filename);
+      const blob = built.doc.output('blob');
+      const shared = await sharePDFIfPossible(blob, built.filename);
+      if (!shared) built.doc.save(built.filename);
       const msg = built.reissued
         ? 'Reçu réédité'
         : built.sousType === 'entree'
@@ -1291,7 +1307,9 @@ export function appData() {
     async regenererPDF(entry) {
       try {
         const { doc, filename } = await this._buildPDFFromEntry(entry);
-        doc.save(filename);
+        const blob = doc.output('blob');
+        const shared = await sharePDFIfPossible(blob, filename);
+        if (!shared) doc.save(filename);
         toast('PDF regénéré', 'success');
       } catch (err) {
         console.error(err);
