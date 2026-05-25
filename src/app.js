@@ -16,11 +16,20 @@ import {
   generateLocataireId,
 } from './lib/schema.js';
 import { renderTemplate, AVAILABLE_PLACEHOLDERS } from './lib/email-template.js';
-import { buildPDF, buildRecuDGPDF } from './lib/pdf.js';
+// Lazy-load de lib/pdf.js : module ~250 kB (jsPDF + dépendances) chargé uniquement au
+// premier clic sur Générer/Regénérer. Le 2e+ appel passe par le cache module ESM.
+// Le SW pré-cache aussi le chunk, donc le 1er appel hors-ligne fonctionne après 1ʳ visite.
+let _pdfModulePromise = null;
+function loadPdfModule() {
+  if (!_pdfModulePromise) _pdfModulePromise = import('./lib/pdf.js');
+  return _pdfModulePromise;
+}
 import { defaultPeriod, formatPeriodFR } from './lib/period.js';
 import { moisTexte, formatDateFR } from './lib/format.js';
 import { toast, confirmDialog, choiceDialog } from './lib/toast.js';
 import { sharePDFIfPossible } from './lib/share.js';
+import { emptyLocataireForm, emptyBailleurForm, emptyBienForm } from './lib/forms.js';
+import { readImageAsDataUrl } from './lib/image-upload.js';
 import {
   buildHistoriqueEntry,
   buildHistoriqueRecuEntry,
@@ -116,11 +125,19 @@ export function appData() {
     // Volontairement non persisté : un refresh remet à zéro.
     fontFallbackWarned: false,
 
+    // Ordre des onglets pour la navigation clavier (←/→/Home/End). DOIT correspondre à
+    // l'ordre DOM des `<button role="tab">` dans index.html. Si vous réordonnez les onglets,
+    // pensez à mettre à jour cette liste — sinon ←/→ devient incohérent avec l'ordre visuel.
     tabsOrder: ['generate', 'depot-garantie', 'historique', 'locataires', 'patrimoine', 'configuration'],
 
     // Indique que des données ont été modifiées depuis le dernier export.
     // Persiste en mémoire uniquement : un refresh remet à false (l'utilisateur a vécu le risque consciemment).
     dirty: false,
+
+    // Lock anti double-clic sur les boutons de génération PDF. Empêche un 2e clic pendant
+    // qu'un PDF est en cours de génération (race observable sur sticky CTA fixed iOS,
+    // ou simplement quand la police Inter prend ~500 ms à charger).
+    _busy: false,
 
     init() {
       this.data = loadData();
@@ -184,6 +201,9 @@ export function appData() {
       this.$watch('dgSelectedLocataireId', () => this.onDgSelectLocataire());
 
       // Routing par URL param (?tab=...) — utilisé par les shortcuts du manifest PWA.
+      // Lu une seule fois à l'init : un changement d'URL ultérieur (history.pushState côté
+      // app, navigation popstate côté navigateur) ne re-déclenchera pas le routing. En PWA
+      // standalone, init() retourne quasi-systématiquement au cold-start, donc OK en pratique.
       // Passe par switchTab pour bénéficier des effets de bord centraux (flush templates, etc.).
       try {
         const requested = new URLSearchParams(window.location.search).get('tab');
@@ -211,6 +231,38 @@ export function appData() {
       const loc = this.selectedLocataire;
       if (!loc) return null;
       return this.data.biens.find((b) => b.id === loc.bienId) || null;
+    },
+
+    // Loyer / charges effectifs pour le mois en cours (avec override appliqué si activé).
+    // Utilisés pour l'aperçu temps réel sur l'onglet Quittance avant génération.
+    get effectiveLoyer() {
+      const loc = this.selectedLocataire;
+      if (!loc) return 0;
+      if (this.overrideMontants) return parseFloat(this.loyerOverride) || 0;
+      return parseFloat(loc.loyer) || 0;
+    },
+    get effectiveCharges() {
+      const loc = this.selectedLocataire;
+      if (!loc) return 0;
+      if (this.overrideMontants) return parseFloat(this.chargesOverride) || 0;
+      return parseFloat(loc.charges) || 0;
+    },
+    get effectivePeriodeLabel() {
+      if (!this.periodeDebut || !this.periodeFin) return '';
+      return formatPeriodFR(this.periodeDebut, this.periodeFin);
+    },
+
+    // Libellé humain de l'onglet courant, pour l'annonce aria-live aux lecteurs d'écran.
+    get currentTabLabel() {
+      const labels = {
+        'generate': 'Quittance',
+        'depot-garantie': 'Dépôt de garantie',
+        'historique': 'Historique',
+        'locataires': 'Locataires',
+        'patrimoine': 'Patrimoine',
+        'configuration': 'Configuration',
+      };
+      return labels[this.activeTab] || this.activeTab;
     },
 
     // Locataires rattachés au bailleur sélectionné (via leurs biens).
@@ -252,7 +304,9 @@ export function appData() {
       this.$nextTick(() => {
         if (!focusPanel) return;
         const panel = document.getElementById(`panel-${name}`);
-        if (panel) panel.focus();
+        // preventScroll: on garde le focus (a11y) sans laisser le navigateur
+        // faire défiler la page jusqu'au panel — gênant en haut de page mobile.
+        if (panel) panel.focus({ preventScroll: true });
       });
     },
 
@@ -273,7 +327,7 @@ export function appData() {
       this.activeTab = next;
       this.$nextTick(() => {
         const tab = document.getElementById(`tab-${next}`);
-        if (tab) tab.focus();
+        if (tab) tab.focus({ preventScroll: true });
       });
     },
 
@@ -373,18 +427,40 @@ export function appData() {
     // Liste des placeholders supportés (réexposée pour l'UI Configuration).
     emailPlaceholders: AVAILABLE_PLACEHOLDERS,
 
-    // Restaure une clé de template à sa valeur par défaut.
-    // Ex: resetEmailTemplate('quittanceSubject') → remet "Quittance de loyer - {mois} {annee}".
+    // Restaure une (ou plusieurs) clé(s) de template à leurs valeurs par défaut.
     // On recrée l'objet emailTemplates entier (au lieu d'assigner par index) pour garantir
-    // la propagation Alpine vers les textareas bound par x-model.
-    resetEmailTemplate(key) {
-      if (!(key in DEFAULT_EMAIL_TEMPLATES)) return;
+    // la propagation Alpine vers les textareas bound par x-model. Pas de confirmation
+    // (helper interne) — utiliser resetEmailTemplatePair côté UI pour le confirm.
+    _resetEmailTemplateKeys(keys) {
       if (!this.data.settings) this.data.settings = { emailTemplates: {} };
+      const patch = {};
+      for (const k of keys) {
+        if (k in DEFAULT_EMAIL_TEMPLATES) patch[k] = DEFAULT_EMAIL_TEMPLATES[k];
+      }
       this.data.settings.emailTemplates = {
         ...this.data.settings.emailTemplates,
-        [key]: DEFAULT_EMAIL_TEMPLATES[key],
+        ...patch,
       };
       this.persistTemplates();
+    },
+
+    // Réinitialise un couple sujet+corps après une seule confirmation utilisateur
+    // (évite le double prompt qui découlerait d'enchaîner deux resetEmailTemplate).
+    async resetEmailTemplatePair(subjectKey, bodyKey) {
+      const tpl = this.data.settings?.emailTemplates || {};
+      const isModified =
+        (tpl[subjectKey] && tpl[subjectKey] !== DEFAULT_EMAIL_TEMPLATES[subjectKey]) ||
+        (tpl[bodyKey] && tpl[bodyKey] !== DEFAULT_EMAIL_TEMPLATES[bodyKey]);
+      if (isModified) {
+        const ok = await confirmDialog({
+          title: 'Réinitialiser ce modèle ?',
+          message: 'Le sujet et le corps de ce modèle seront remplacés par les valeurs par défaut. Cette action ne peut pas être annulée.',
+          confirmLabel: 'Réinitialiser',
+          danger: true,
+        });
+        if (!ok) return;
+      }
+      this._resetEmailTemplateKeys([subjectKey, bodyKey]);
     },
 
     // Persistance debouncée pour les inputs de templates (évite un saveData() à chaque frappe).
@@ -448,35 +524,18 @@ export function appData() {
       });
     },
 
-    // Lecture d'une image (PNG ou JPEG) depuis un <input type="file"> vers une dataURL base64.
-    // Limite : 500 Ko avant base64 — au-delà, on rejette (le localStorage est plafonné ~5 Mo
-    // et plusieurs bailleurs × image peuvent vite saturer). Renvoie la dataURL ou null si rejet.
-    async _readImageAsDataUrl(file) {
-      const MAX_BYTES = 500 * 1024;
-      if (!file) return null;
-      if (!/^image\/(png|jpeg|jpg)$/i.test(file.type)) {
-        toast('Format non supporté (PNG ou JPEG uniquement)', 'error');
-        return null;
-      }
-      if (file.size > MAX_BYTES) {
-        toast('Image trop volumineuse (max 500 Ko)', 'error', 5000);
-        return null;
-      }
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
-        reader.onerror = () => {
-          toast("Impossible de lire l'image", 'error');
-          resolve(null);
-        };
-        reader.readAsDataURL(file);
-      });
+    // Mapping des codes d'erreur du module image-upload vers des toasts utilisateur.
+    // Le helper pur ne connaît pas le système de toasts, on injecte ce callback à chaque appel.
+    _onImageUploadError(reason) {
+      if (reason === 'type') toast('Format non supporté (PNG ou JPEG uniquement)', 'error');
+      else if (reason === 'size') toast('Image trop volumineuse (max 500 Ko)', 'error', 5000);
+      else if (reason === 'read') toast("Impossible de lire l'image", 'error');
     },
 
     async uploadSignatureImage(event) {
       const file = event.target.files?.[0];
       event.target.value = '';
-      const dataUrl = await this._readImageAsDataUrl(file);
+      const dataUrl = await readImageAsDataUrl(file, (r) => this._onImageUploadError(r));
       if (!dataUrl) return;
       this.editingBailleur.form.signatureImage = dataUrl;
     },
@@ -488,7 +547,7 @@ export function appData() {
     async uploadLogo(event) {
       const file = event.target.files?.[0];
       event.target.value = '';
-      const dataUrl = await this._readImageAsDataUrl(file);
+      const dataUrl = await readImageAsDataUrl(file, (r) => this._onImageUploadError(r));
       if (!dataUrl) return;
       this.editingBailleur.form.logo = dataUrl;
     },
@@ -833,6 +892,7 @@ export function appData() {
       // Date d'émission figée à l'instant du clic — partagée entre le PDF et l'entrée snapshot
       // d'historique pour que la réédition future donne le même document.
       const dateEmission = new Date().toISOString().slice(0, 10);
+      const { buildPDF } = await loadPdfModule();
       const { doc, filename, fontFallback } = await buildPDF({
         bailleur,
         bien,
@@ -852,6 +912,23 @@ export function appData() {
       return { doc, filename, loyer, charges, numeroQuittance: numero, dateEmission };
     },
 
+    // Helper interne : ouvre le dialogue à 3 choix (Annuler / Nouvelle / Rééditer) commun
+    // aux flux quittance et reçu DG. Retourne 'new' | 'reissue' | null.
+    // Ordre des choix : du moins primaire au plus primaire (mobile flex-col-reverse pose la
+    // primaire en haut, desktop justify-end la pose à droite — alignée au curseur).
+    async _askDoublonChoice({ title, message, newLabel, reissueLabel }) {
+      const choice = await choiceDialog({
+        title,
+        message,
+        choices: [
+          { value: null, label: 'Annuler', variant: 'secondary' },
+          { value: 'new', label: newLabel, variant: 'secondary' },
+          { value: 'reissue', label: reissueLabel, variant: 'primary', autoFocus: true },
+        ],
+      });
+      return choice;
+    },
+
     // Trois issues possibles :
     //   - { action: 'new' }                     → générer une nouvelle quittance (push historique)
     //   - { action: 'reissue', existing: entry } → rééditer le PDF de l'entrée existante (pas de push)
@@ -869,17 +946,11 @@ export function appData() {
       const dernier = doublons.reduce((acc, h) => (h.dateGeneration > acc.dateGeneration ? h : acc));
       const dateTxt = new Date(dernier.dateGeneration).toLocaleDateString('fr-FR');
       const label = moisTexte(this.moisNum, this.annee);
-      // Ordre DOM = du moins primaire au plus primaire.
-      // En mobile (flex-col-reverse) → reissue en haut, cancel en bas.
-      // En desktop (flex-row + justify-end) → cancel à gauche, reissue à droite (alignée au curseur).
-      const choice = await choiceDialog({
+      const choice = await this._askDoublonChoice({
         title: 'Quittance déjà émise',
         message: `Une quittance pour ${loc.nom} – ${label} a déjà été générée le ${dateTxt}${dernier.numeroQuittance ? ` (${dernier.numeroQuittance})` : ''}. Que souhaitez-vous faire ?`,
-        choices: [
-          { value: null, label: 'Annuler', variant: 'secondary' },
-          { value: 'new', label: '📄 Générer une nouvelle', variant: 'secondary' },
-          { value: 'reissue', label: "🔁 Rééditer l'existante", variant: 'primary', autoFocus: true },
-        ],
+        newLabel: '📄 Générer une nouvelle',
+        reissueLabel: "🔁 Rééditer l'existante",
       });
       if (choice === 'reissue') return { action: 'reissue', existing: dernier };
       if (choice === 'new') return { action: 'new' };
@@ -897,6 +968,7 @@ export function appData() {
         signatureImage: visuel.signatureImage,
         logo: visuel.logo,
       };
+      const { buildPDF, buildRecuDGPDF } = await loadPdfModule();
       const isRecu = entry.type === 'recu_dg_entree' || entry.type === 'recu_dg_sortie';
       if (isRecu) {
         const sousType = entry.type === 'recu_dg_entree' ? 'entree' : 'sortie';
@@ -981,47 +1053,71 @@ export function appData() {
       return { doc, filename, reissued: false, bailleur: this.selectedBailleur };
     },
 
+    // Wrap une opération async pour bloquer les boutons de génération pendant son exécution.
+    // Tous les flows PDF passent par ici pour éviter qu'un double-clic ne génère deux PDF
+    // (et deux entrées historique avec des numéros incrémentés). Reset garanti via try/finally.
+    async _withBusy(fn) {
+      if (this._busy) return null;
+      this._busy = true;
+      try {
+        return await fn();
+      } finally {
+        this._busy = false;
+      }
+    },
+
+    // Télécharge un PDF blob proprement, avec révocation différée de l'URL objet.
+    // setTimeout 0 évite que Safari iOS interrompe le download si on enchaîne sur
+    // window.location.href = mailto: dans la même frame.
+    _downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+
     async generatePDF() {
       if (!this.validateBaseSelection()) return;
-      const built = await this._resolveAndBuild();
-      if (!built) return;
-      const blob = built.doc.output('blob');
-      const shared = await sharePDFIfPossible(blob, built.filename);
-      if (!shared) built.doc.save(built.filename);
-      toast(built.reissued ? 'PDF réédité' : 'Quittance téléchargée', 'success');
+      await this._withBusy(async () => {
+        const built = await this._resolveAndBuild();
+        if (!built) return;
+        const blob = built.doc.output('blob');
+        const shared = await sharePDFIfPossible(blob, built.filename);
+        if (!shared) built.doc.save(built.filename);
+        toast(built.reissued ? 'PDF réédité' : 'Quittance téléchargée', 'success');
+      });
     },
 
     async generateAndEmail() {
       if (!this.validateBaseSelection()) return;
-      const built = await this._resolveAndBuild();
-      if (!built) return;
+      await this._withBusy(async () => {
+        const built = await this._resolveAndBuild();
+        if (!built) return;
 
-      const blob = built.doc.output('blob');
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = built.filename;
-      a.click();
-      URL.revokeObjectURL(url);
+        const blob = built.doc.output('blob');
+        this._downloadBlob(blob, built.filename);
 
-      const loc = this.selectedLocataire;
-      const dest = (this.emailLocataire || loc.email || '').trim();
-      const label = moisTexte(this.moisNum, this.annee);
-      // En réédition, on signe avec le bailleur du snapshot — l'email reste cohérent avec le PDF
-      // joint, même si la fiche bailleur a changé entre-temps.
-      const vars = {
-        locataire: loc.nom || '',
-        mois: label,
-        annee: this.annee || '',
-        bailleur: built.bailleur.nom || '',
-        signature: built.bailleur.signature || '',
-      };
-      const tpl = this.data.settings?.emailTemplates || {};
-      const sujet = renderTemplate(tpl.quittanceSubject || DEFAULT_EMAIL_TEMPLATES.quittanceSubject, vars);
-      const corps = renderTemplate(tpl.quittanceBody || DEFAULT_EMAIL_TEMPLATES.quittanceBody, vars);
-      const mailto = `mailto:${dest}?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(corps)}`;
-      window.location.href = mailto;
-      toast("PDF téléchargé. Pensez à l'attacher à l'email.", 'info', 6000);
+        const loc = this.selectedLocataire;
+        const dest = (this.emailLocataire || loc.email || '').trim();
+        const label = moisTexte(this.moisNum, this.annee);
+        // En réédition, on signe avec le bailleur du snapshot — l'email reste cohérent avec le PDF
+        // joint, même si la fiche bailleur a changé entre-temps.
+        const vars = {
+          locataire: loc.nom || '',
+          mois: label,
+          annee: this.annee || '',
+          bailleur: built.bailleur.nom || '',
+          signature: built.bailleur.signature || '',
+        };
+        const tpl = this.data.settings?.emailTemplates || {};
+        const sujet = renderTemplate(tpl.quittanceSubject || DEFAULT_EMAIL_TEMPLATES.quittanceSubject, vars);
+        const corps = renderTemplate(tpl.quittanceBody || DEFAULT_EMAIL_TEMPLATES.quittanceBody, vars);
+        const mailto = `mailto:${dest}?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(corps)}`;
+        window.location.href = mailto;
+        toast("PDF téléchargé. Pensez à l'attacher à l'email.", 'info', 6000);
+      });
     },
 
     // ----- Dépôt de garantie -----
@@ -1047,6 +1143,18 @@ export function appData() {
       if (!id) return [];
       const bienIds = new Set(this.data.biens.filter((b) => b.bailleurId === id).map((b) => b.id));
       return this.data.locataires.filter((l) => bienIds.has(l.bienId));
+    },
+
+    // Montants effectifs du reçu DG (parsing défensif sur l'entrée user).
+    // Utilisés par l'aperçu temps réel sur l'onglet Dépôt de garantie.
+    get dgEffectiveMontantInitial() {
+      return parseFloat(this.dgMontantInitial) || 0;
+    },
+    get dgEffectiveMontantRestitue() {
+      return parseFloat(this.dgMontantRestitue) || 0;
+    },
+    get dgEffectiveRetenu() {
+      return Math.max(0, this.dgEffectiveMontantInitial - this.dgEffectiveMontantRestitue);
     },
 
     // Pré-remplit montant initial depuis la fiche locataire au changement de sélection.
@@ -1116,14 +1224,11 @@ export function appData() {
       const dernier = doublons.reduce((acc, h) => (h.dateGeneration > acc.dateGeneration ? h : acc));
       const dateTxt = new Date(dernier.dateGeneration).toLocaleDateString('fr-FR');
       const sousTypeLabel = this.dgSousType === 'entree' ? "d'encaissement" : 'de restitution';
-      const choice = await choiceDialog({
+      const choice = await this._askDoublonChoice({
         title: 'Reçu déjà émis',
         message: `Un reçu de dépôt de garantie ${sousTypeLabel} pour ${loc.nom} a déjà été généré le ${dateTxt}${dernier.numeroQuittance ? ` (${dernier.numeroQuittance})` : ''}. Que souhaitez-vous faire ?`,
-        choices: [
-          { value: null, label: 'Annuler', variant: 'secondary' },
-          { value: 'new', label: '📄 Générer un nouveau', variant: 'secondary' },
-          { value: 'reissue', label: "🔁 Rééditer l'existant", variant: 'primary', autoFocus: true },
-        ],
+        newLabel: '📄 Générer un nouveau',
+        reissueLabel: "🔁 Rééditer l'existant",
       });
       if (choice === 'reissue') return { action: 'reissue', existing: dernier };
       if (choice === 'new') return { action: 'new' };
@@ -1171,6 +1276,7 @@ export function appData() {
       const retenuesTexte = sousType === 'sortie' ? this.dgRetenuesTexte || '' : '';
 
       try {
+        const { buildRecuDGPDF } = await loadPdfModule();
         const { doc, filename, fontFallback } = await buildRecuDGPDF({
           sousType,
           bailleur,
@@ -1211,51 +1317,55 @@ export function appData() {
     },
 
     async generateRecuDG() {
-      const built = await this._resolveAndBuildRecuDG();
-      if (!built) return;
-      const blob = built.doc.output('blob');
-      const shared = await sharePDFIfPossible(blob, built.filename);
-      if (!shared) built.doc.save(built.filename);
-      const msg = built.reissued
-        ? 'Reçu réédité'
-        : built.sousType === 'entree'
-          ? 'Reçu DG téléchargé'
-          : 'Reçu de restitution téléchargé';
-      toast(msg, 'success');
+      await this._withBusy(async () => {
+        const built = await this._resolveAndBuildRecuDG();
+        if (!built) return;
+        const blob = built.doc.output('blob');
+        const shared = await sharePDFIfPossible(blob, built.filename);
+        if (!shared) built.doc.save(built.filename);
+        const msg = built.reissued
+          ? 'Reçu réédité'
+          : built.sousType === 'entree'
+            ? 'Reçu DG téléchargé'
+            : 'Reçu de restitution téléchargé';
+        toast(msg, 'success');
+      });
     },
 
     async generateRecuDGAndEmail() {
-      const built = await this._resolveAndBuildRecuDG();
-      if (!built) return;
+      await this._withBusy(async () => {
+        const built = await this._resolveAndBuildRecuDG();
+        if (!built) return;
 
-      const blob = built.doc.output('blob');
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = built.filename;
-      a.click();
-      URL.revokeObjectURL(url);
+        const blob = built.doc.output('blob');
+        this._downloadBlob(blob, built.filename);
 
-      const loc = built.locataire || {};
-      const dest = (loc.email || '').trim();
-      const tpl = this.data.settings?.emailTemplates || {};
-      // L'année du reçu DG = celle de l'événement (encaissement ou restitution), pas l'année
-      // courante : un reçu daté du passé doit afficher la bonne année dans l'email aussi.
-      const anneeEvt = (built.dateEvenement || '').slice(0, 4) || new Date().getFullYear().toString();
-      const vars = {
-        locataire: loc.nom || '',
-        mois: '',
-        annee: anneeEvt,
-        bailleur: built.bailleur?.nom || '',
-        signature: built.bailleur?.signature || '',
-      };
-      const subjectKey = built.sousType === 'entree' ? 'dgEntreeSubject' : 'dgSortieSubject';
-      const bodyKey = built.sousType === 'entree' ? 'dgEntreeBody' : 'dgSortieBody';
-      const sujet = renderTemplate(tpl[subjectKey] || DEFAULT_EMAIL_TEMPLATES[subjectKey], vars);
-      const corps = renderTemplate(tpl[bodyKey] || DEFAULT_EMAIL_TEMPLATES[bodyKey], vars);
-      const mailto = `mailto:${dest}?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(corps)}`;
-      window.location.href = mailto;
-      toast("PDF téléchargé. Pensez à l'attacher à l'email.", 'info', 6000);
+        const loc = built.locataire || {};
+        const dest = (loc.email || '').trim();
+        const tpl = this.data.settings?.emailTemplates || {};
+        // L'année du reçu DG = celle de l'événement (encaissement ou restitution), pas l'année
+        // courante : un reçu daté du passé doit afficher la bonne année dans l'email aussi.
+        const anneeEvt = (built.dateEvenement || '').slice(0, 4) || new Date().getFullYear().toString();
+        // Pour les reçus DG on substitue {mois} par le mois de l'événement (ex. "septembre 2025")
+        // — utile si un utilisateur personnalise son template DG avec ce placeholder.
+        const moisEvt = built.dateEvenement
+          ? moisTexte(built.dateEvenement.slice(5, 7), built.dateEvenement.slice(0, 4))
+          : '';
+        const vars = {
+          locataire: loc.nom || '',
+          mois: moisEvt,
+          annee: anneeEvt,
+          bailleur: built.bailleur?.nom || '',
+          signature: built.bailleur?.signature || '',
+        };
+        const subjectKey = built.sousType === 'entree' ? 'dgEntreeSubject' : 'dgSortieSubject';
+        const bodyKey = built.sousType === 'entree' ? 'dgEntreeBody' : 'dgSortieBody';
+        const sujet = renderTemplate(tpl[subjectKey] || DEFAULT_EMAIL_TEMPLATES[subjectKey], vars);
+        const corps = renderTemplate(tpl[bodyKey] || DEFAULT_EMAIL_TEMPLATES[bodyKey], vars);
+        const mailto = `mailto:${dest}?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(corps)}`;
+        window.location.href = mailto;
+        toast("PDF téléchargé. Pensez à l'attacher à l'email.", 'info', 6000);
+      });
     },
 
     // ----- Historique -----
@@ -1273,6 +1383,9 @@ export function appData() {
     // Les dropdowns de filtres cascadent : bailleur → bien → locataire.
     // Sélectionner un bailleur réduit la liste des biens à ceux qui apparaissent dans son historique, etc.
     // Les années restent globales (axe temporel orthogonal).
+    // Perf : ces getters Alpine sont re-évalués à chaque render. Sur 1000 entries c'est ~2 ms,
+    // négligeable. Si on dépasse 5000 entries un jour, memoiser via un cache invalidé sur la
+    // longueur de this.data.historique.
     get _historiqueDansBailleur() {
       if (!this.filterBailleurId) return this.data.historique;
       return this.data.historique.filter((h) => h.bailleurId === this.filterBailleurId);
@@ -1305,16 +1418,18 @@ export function appData() {
     },
 
     async regenererPDF(entry) {
-      try {
-        const { doc, filename } = await this._buildPDFFromEntry(entry);
-        const blob = doc.output('blob');
-        const shared = await sharePDFIfPossible(blob, filename);
-        if (!shared) doc.save(filename);
-        toast('PDF regénéré', 'success');
-      } catch (err) {
-        console.error(err);
-        toast('Impossible de regénérer ce PDF', 'error');
-      }
+      await this._withBusy(async () => {
+        try {
+          const { doc, filename } = await this._buildPDFFromEntry(entry);
+          const blob = doc.output('blob');
+          const shared = await sharePDFIfPossible(blob, filename);
+          if (!shared) doc.save(filename);
+          toast('PDF regénéré', 'success');
+        } catch (err) {
+          console.error(err);
+          toast('Impossible de regénérer ce PDF', 'error');
+        }
+      });
     },
 
     async supprimerEntreeHistorique(id) {
@@ -1362,7 +1477,10 @@ export function appData() {
       }
     },
 
-    // Helpers d'affichage pour l'historique
+    // Helpers d'affichage (réexposés pour l'UI Alpine — sinon les imports JS ne sont pas
+    // accessibles depuis les expressions x-text/x-show du template).
+    formatDateFR,
+
     formatPeriodeAffichee(entry) {
       return formatPeriodFR(entry.periodeDebut, entry.periodeFin);
     },
@@ -1460,40 +1578,3 @@ export function appData() {
   };
 }
 
-function emptyLocataireForm() {
-  return {
-    nom: '',
-    email: '',
-    bienId: '',
-    loyer: '',
-    charges: '',
-    modeReglement: '',
-    referenceBail: '',
-    coOccupants: '',
-    depotGarantie: 0,
-  };
-}
-
-function emptyBailleurForm() {
-  return {
-    nom: '',
-    adresse: '',
-    ville: '',
-    signature: '',
-    signatureActive: true,
-    signatureImage: '',
-    logo: '',
-    email: '',
-    telephone: '',
-  };
-}
-
-function emptyBienForm() {
-  return {
-    bailleurId: '',
-    libelle: '',
-    adresse: '',
-    type: 'autre',
-    reference: '',
-  };
-}

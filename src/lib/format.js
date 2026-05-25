@@ -1,11 +1,19 @@
+// Montant français : 1234.5 → "1234,50". Renvoie "0,00" pour NaN/undefined/Infinity
+// (les callers attendent toujours une chaîne affichable).
 export function formatMontant(nombre) {
-  return Number(nombre).toFixed(2).replace('.', ',');
+  const n = Number(nombre);
+  if (!Number.isFinite(n)) return '0,00';
+  return n.toFixed(2).replace('.', ',');
 }
 
+// Date ISO YYYY-MM-DD → DD/MM/YYYY. Valide strictement le format en entrée
+// (sinon "abc" devenait "undefined/undefined/abc"). Renvoie '' si format invalide.
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 export function formatDateFR(dateStr) {
   if (!dateStr) return '';
-  const [y, m, d] = dateStr.split('-');
-  return `${d}/${m}/${y}`;
+  const m = ISO_DATE_RE.exec(String(dateStr));
+  if (!m) return '';
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
 const MOIS_NOMS = [

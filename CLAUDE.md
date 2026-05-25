@@ -28,15 +28,17 @@ src/
   lib/
     storage.js         # load/save localStorage + monitoring quota (getStorageInfo, buildArchivedCopy, cutoffYearsAgo)
     schema.js          # Schéma Zod v2.1 (data) + settings.emailTemplates + DEFAULT_EMAIL_TEMPLATES + normalisation des imports
-    pdf.js             # Construction async des PDF (quittance + reçus DG) — drawSignatureBox 3 modes, logo en-tête, retenues en texte plat (splitTextToSize)
+    pdf.js             # Construction async des PDF (quittance + reçus DG) — drawSignatureBox 3 modes, logo en-tête, retenues en texte plat (splitTextToSize) — lazy-load (chunk ~400 kB séparé du bundle initial)
     historique.js      # Fonctions pures historique (buildEntry, buildRecuEntry, findDoublons[Recu], filter/sort, nextNumeroQuittance, nextNumeroRecu, resolveBailleurForRender)
     xlsx-export.js     # Export XLSX de l'historique (lazy-loaded via import dynamique)
     email-template.js  # renderTemplate(str, vars) — substitution {placeholder} pour les emails personnalisables (mailto)
     share.js           # sharePDFIfPossible(blob, filename, nav?) — Web Share API natif, fallback transparent vers doc.save()
+    forms.js           # emptyLocataireForm / emptyBailleurForm / emptyBienForm — factories de formulaires vides pour les modales unifiées
+    image-upload.js    # validateImageFile + readImageAsDataUrl (PNG/JPEG ≤ 500 Ko, callback onError)
     pwa.js             # SW register (prompt mode), bannière d'install, toast de mise à jour
     nombre-en-lettres.js
     period.js          # 1er au dernier jour du mois, format FR
-    format.js          # formatMontant, moisTexte, formatDateFR
+    format.js          # formatMontant, moisTexte, formatDateFR — défensifs (NaN/format invalide → "" ou "0,00")
     toast.js           # Toasts + confirmDialog (focus trap, ARIA)
   test/                # Tests Vitest (fonctions pures)
 public/                # Assets statiques copiés tels quels par Vite : icônes PWA (icon.svg + PNG générés), favicon
@@ -91,14 +93,15 @@ Persistance dans `localStorage` sous la clé `quittances_data`. Hiérarchie **ba
     }
   ],
   // V2.2 : premier setting global (jusqu'ici tout était per-bailleur). Les défauts viennent
-  // de DEFAULT_EMAIL_TEMPLATES dans schema.js et sont restaurables via resetEmailTemplate(key).
+  // de DEFAULT_EMAIL_TEMPLATES dans schema.js et sont restaurables via resetEmailTemplatePair.
   settings: {
     emailTemplates: {
       quittanceSubject, quittanceBody,
       dgEntreeSubject,  dgEntreeBody,
       dgSortieSubject,  dgSortieBody,
       // Placeholders supportés : {locataire}, {mois}, {annee}, {bailleur}, {signature}
-    }
+    },
+    archiveYears, // V2.3.1 : durée de conservation de l'historique avant proposition d'archivage. Défaut 2, clampé [1, 30], configurable dans l'onglet Configuration.
   }
 }
 ```
@@ -134,10 +137,23 @@ Persistance dans `localStorage` sous la clé `quittances_data`. Hiérarchie **ba
 - **Filtres historique** : `filterAndSort()` accepte `{ locataireNom, annee, bailleurId, bienLibelle, type }`. La barre de filtres dans l'onglet Historique expose les 5. Le rendu d'une entrée DG affiche un badge `Reçu DG (entrée/sortie)` et bascule sur un layout dédié (montants DG au lieu de loyer+charges, date d'événement au lieu de période).
 - **Export XLSX** : `lib/xlsx-export.js` est importé dynamiquement (`await import(...)`) au clic, pour ne pas alourdir le bundle initial.
 - **Templates email personnalisables** (V2.2) : sujet + corps du `mailto:` configurables dans l'onglet Configuration pour 3 types de documents (quittance, reçu DG entrée, reçu DG sortie). Stockés dans `data.settings.emailTemplates`. Substitution via `renderTemplate(str, vars)` ([src/lib/email-template.js](src/lib/email-template.js)) — placeholders `{locataire}`, `{mois}`, `{annee}`, `{bailleur}`, `{signature}` remplacés au moment de l'envoi. Bouton « Réinitialiser » par template restore les défauts via `resetEmailTemplate(key)`. Persistance debouncée (400 ms) via `persistTemplates()` pour éviter d'écrire dans le localStorage à chaque frappe. Les retenues du reçu DG sortie sont saisies dans un simple `<textarea>` (V2.2 : Tiptap retiré, plus de mise en forme — texte brut multi-ligne).
-- **Storage monitoring** ([src/lib/storage.js](src/lib/storage.js)) : `saveData(data)` retourne `{ ok, quotaExceeded }`. `getStorageInfo()` renvoie `{ bytes, quotaBytes, percent, status }` avec `status ∈ 'ok' | 'warning' (≥70 %) | 'critical' (≥90 %)`. L'onglet Configuration affiche une jauge réactive (le getter `storageInfo` lit `this.data` pour qu'Alpine re-track le getter à chaque mutation). Bouton `archiveAncienHistorique(years = 2)` qui retire les entrées dont `dateGeneration < cutoffYearsAgo(2)` après confirmation (incite à exporter d'abord). Quota plafonné à 5 Mo (constante `STORAGE_QUOTA_BYTES`).
+- **Storage monitoring** ([src/lib/storage.js](src/lib/storage.js)) : `saveData(data)` retourne `{ ok, quotaExceeded }`. `getStorageInfo()` renvoie `{ bytes, quotaBytes, percent, status }` avec `status ∈ 'ok' | 'warning' (≥70 %) | 'critical' (≥90 %)`. L'onglet Configuration affiche une jauge réactive (le getter `storageInfo` lit `this.data` pour qu'Alpine re-track le getter à chaque mutation). Bouton `archiveAncienHistorique(years)` qui retire les entrées dont `dateGeneration < cutoffYearsAgo(years)` après confirmation (incite à exporter d'abord). **V2.3.1** : la durée est configurable via `data.settings.archiveYears` (1, 2, 3, 5 ou 10 ans, défaut 2). Quota plafonné à 5 Mo (constante `STORAGE_QUOTA_BYTES`).
 - **Toasts / dialogues** : `toast(msg, variant)`, `await confirmDialog({...})` (2 boutons) et `await choiceDialog({ choices: [{value, label, variant, autoFocus}] })` (N boutons, renvoie la valeur du bouton cliqué ou `null`) ([src/lib/toast.js](src/lib/toast.js)) remplacent tous les `alert()` / `confirm()`. `confirmDialog` est désormais un wrapper sur `choiceDialog`. **Convention d'ordre des `choices`** : du moins primaire au plus primaire (le conteneur a `flex-col-reverse` sur mobile et `justify-end` sur desktop, ce qui place le dernier item au bon endroit dans les deux layouts).
 - **Email** : `mailto:` ne supporte pas les pièces jointes — le PDF est téléchargé et l'utilisateur l'attache manuellement (toast d'avertissement explicite).
-- **PWA** : `vite-plugin-pwa` (mode `prompt`, `injectRegister: false`) génère `sw.js` + `manifest.webmanifest` au build. [src/lib/pwa.js](src/lib/pwa.js) gère l'enregistrement du SW (toast « Nouvelle version dispo · Recharger »), capture `beforeinstallprompt` et affiche une bannière d'install dismissible (flag `quittance_pwa_install_dismissed` dans `localStorage`). Précachage Workbox de tous les assets buildés ; SW désactivé en dev (`devOptions.enabled: false`).
+- **PWA** : `vite-plugin-pwa` (mode `prompt`, `injectRegister: false`) génère `sw.js` + `manifest.webmanifest` au build. [src/lib/pwa.js](src/lib/pwa.js) gère l'enregistrement du SW (toast « Nouvelle version dispo · Recharger »), capture `beforeinstallprompt` et affiche une bannière d'install dismissible (flag `quittance_pwa_install_dismissed` dans `localStorage`). Précachage Workbox de tous les assets buildés ; SW désactivé en dev (`devOptions.enabled: false`). **V2.3** : manifest enrichi avec `categories` et `shortcuts` (raccourcis ?tab=generate / ?tab=historique au long-press de l'icône installée). Routing `?tab=` lu une fois à `init()` via `tabsOrder.includes(...)`. Pas de `share_target` (retiré tant qu'aucun handler ne consomme les params).
+
+## V2.3 : polish PWA + mobile, accessibilité, perf
+
+- **Lock anti-double-clic** ([src/app.js](src/app.js)) : flag `_busy` + helper `_withBusy(fn)` partagé par les 5 méthodes de génération PDF (`generatePDF`, `generateAndEmail`, `generateRecuDG`, `generateRecuDGAndEmail`, `regenererPDF`). Boutons HTML : `:disabled="_busy"` + `x-text` qui affiche `⏳ Génération…` pendant l'opération. Évite la race observable sur sticky CTA fixed iOS et le double-push d'entrée historique.
+- **Aperçu temps réel** ([src/app.js](src/app.js) getters `effectiveLoyer`, `effectiveCharges`, `effectivePeriodeLabel` côté Quittance ; `dgEffectiveMontantInitial/Restitue/Retenu` côté DG) : la card-section « Aperçu » sur les onglets Quittance et DG montre les montants/période/dates effectifs qui iront sur le PDF, sans que l'utilisateur ait besoin de cocher « personnaliser ». Badge « Ajusté pour ce mois » si `overrideMontants` actif.
+- **Web Share API** ([src/lib/share.js](src/lib/share.js)) : `sharePDFIfPossible(blob, filename, nav?)` branché dans les 3 flux PDF non-email (`generatePDF`, `generateRecuDG`, `regenererPDF`). Sur Safari iOS / Chrome Android : feuille de partage native. Sur navigateur non-supportant ou refus utilisateur : fallback transparent vers `doc.save()`. AbortError géré pour éviter double-téléchargement.
+- **Sticky CTA mobile** ([src/style.css](src/style.css)) : sur < 640px, `.actions-cta` est `position: fixed; left: 0; right: 0; bottom: 0` avec padding `env(safe-area-inset-bottom/left/right)`. Les panels concernés portent la classe `panel-with-cta` qui ajoute `padding-bottom: calc(5rem + safe-area)` pour ne pas masquer le dernier champ. Désactivé en sm+ (rendu inline classique).
+- **Header sticky mobile** ([src/style.css](src/style.css)) : `<header class="app-header">` qui wrappe `<h1>` + barre d'onglets devient sticky en haut sur mobile (`position: sticky; top: 0; z-index: 40`), avec `padding-top: env(safe-area-inset-top)` pour couvrir la status bar iOS transparente (`black-translucent` mode). Le container parent passe à `pt-0` mobile pour éviter le double padding.
+- **Dark mode auto** ([src/style.css](src/style.css), `tailwind.config.js` `darkMode: 'media'`) : surcharges CSS ciblées des classes utilitaires de surface (`bg-white`, `bg-apple-bg`, `text-apple-*`, bannières amber/red). `color-scheme: dark` pour que les contrôles natifs suivent. Le PDF jsPDF reste indépendant — toujours en thème clair.
+- **Lazy-load PDF** ([src/app.js](src/app.js)) : `import('./lib/pdf.js')` dynamique mémoïsé via `loadPdfModule()`. Bundle initial passe de ~178 kB à ~44 kB gzippé (-75%). `html2canvas` et `dompurify` (transitivement importés par jsPDF) partent automatiquement dans le chunk lazy `pdf.js`.
+- **Accessibilité** : focus rings WCAG sur `.field-input` (`focus:ring-2 focus:ring-apple-blue/40`), `.btn:focus-visible` (outline 2px), onglets (`focus-visible:outline`). `prefers-reduced-motion` honoré globalement. `<main>` landmark autour des panels. `aria-live="polite"` annonce le changement d'onglet via `currentTabLabel`. `scroll-margin-top: 6rem` sur les éléments cibles mobile pour ne pas être masqués par le header sticky.
+- **Default des champs de quittance affichés en aperçu** : `formatDateFR` exposé sur le composant Alpine (`formatDateFR` re-bind comme méthode) — sinon les imports JS ne sont pas accessibles depuis les `x-text` du template.
+- **Email DG** : le placeholder `{mois}` est désormais substitué par `moisTexte(dateEvenement)` (avant : chaîne vide). Permet d'utiliser ce placeholder dans les templates DG personnalisés.
 
 ## Commandes
 

@@ -1,7 +1,7 @@
-# PRD — Générateur de Quittances de Loyer
+# PRD — Quittances & Dépôt de garantie
 
 > Document de cadrage produit. Voir aussi : [README.md](../README.md) (doc utilisateur).
-> Statut : v2.2 livrée.
+> Statut : v2.3 livrée.
 
 ## Problème
 
@@ -113,6 +113,24 @@ Refonte du modèle de données : `bailleurs[] → biens[] → locataires[] → h
 - ✅ **Bouton email côté reçu DG** : symétrique à l'onglet Quittance, deux boutons (« Télécharger » + « Télécharger et préparer l'email ») dans l'onglet Dépôt de garantie. Nouvelle méthode `generateRecuDGAndEmail()`.
 - ✅ **Retrait Tiptap / simplification retenues** : l'éditeur WYSIWYG (gras/italique/souligné/listes) est remplacé par un simple `<textarea>` multi-ligne. Le champ snapshot historique passe de `retenuesHtml` (HTML restreint) à `retenuesTexte` (texte plat). Migration : les entrées V2.1 avec `retenuesHtml` sont **vidées** (décision assumée — feature récente, volume faible, et le HTML brut serait illisible sur le PDF texte plat).
 - ✅ **Allègement du bundle** : suppression des dépendances `@tiptap/core` + `@tiptap/starter-kit` + `@tiptap/extension-underline` (~40 Ko gzip), des fonts `Inter-Italic.ttf` + `Inter-BoldItalic.ttf` (~830 KiB précachés PWA), du parser HTML→PDF (`parseRichTextHtml` + `drawRichText` + tests, ~250 lignes). PWA precache passe de ~2500 KiB à ~1670 KiB.
+
+**v2.3 — Mobile / PWA / accessibilité**
+
+- ✅ **Refonte responsive mobile** : onglets scrollables avec snap + fade, listes adaptées (boutons d'action sur ligne dédiée pleine largeur sous 640 px, cible tactile ≥ 44 px), modales avec `my-4 sm:my-12` et padding `safe-area`, grilles formulaires interpolant 1→2→3 colonnes, badge DG passé en `text-xs`.
+- ✅ **Sticky header mobile** : `<header class="app-header">` qui regroupe titre + barre d'onglets reste collé en haut sur mobile (`position: sticky; top: 0`), avec `padding-top: env(safe-area-inset-top)` pour couvrir la status bar iOS transparente. Le header disparaît en `sm+` (rendu inline classique).
+- ✅ **Sticky CTA mobile** : sur `< 640 px`, le bloc « Télécharger PDF / Email » est `position: fixed` au viewport (pas de remontée en bas de scroll, pas de bande grise révélée par l'overscroll iOS). Compensation `padding-bottom: 5rem + safe-area` sur les panels concernés (`.panel-with-cta`).
+- ✅ **PWA iOS** : `viewport-fit=cover`, `apple-mobile-web-app-status-bar-style: black-translucent`, safe-area-inset sur body / container / banner / modales. Body coloré mobile (`white` clair, `#2c2c2e` dark) pour neutraliser l'overscroll élastique iOS.
+- ✅ **Dark mode auto** (`prefers-color-scheme: dark`) : palette d'override des classes utilitaires de surface en CSS (pas de variant `dark:` Tailwind, trop de surface à tagger). Le PDF jsPDF reste indépendant — toujours en thème clair.
+- ✅ **Manifest enrichi** : `categories: ['productivity', 'finance', 'business']`, `shortcuts` (« Générer une quittance », « Historique ») branchés via routing `?tab=` lu à `init()` sur whitelist `tabsOrder`. `share_target` retiré tant qu'aucun handler ne consomme les params.
+- ✅ **Web Share API** ([src/lib/share.js](../src/lib/share.js)) : `sharePDFIfPossible(blob, filename, nav?)` branché dans les 3 flux PDF non-email. Sur Safari iOS / Chrome Android : feuille de partage native. Sur navigateur non-supportant : fallback transparent vers `doc.save()`. `AbortError` géré pour éviter le double-téléchargement.
+- ✅ **Lock anti double-clic** : flag `_busy` + helper `_withBusy(fn)` partagé par les 5 méthodes de génération PDF. Boutons HTML désactivés via `:disabled="_busy"` + label « ⏳ Génération… ». Évite la race observable sur sticky CTA fixed iOS et le double-push d'entrée historique.
+- ✅ **Aperçu temps réel des montants** : sur l'onglet Quittance, une card « Aperçu de la quittance » apparaît dès qu'un locataire est sélectionné, montrant période + loyer + charges + total + mode de règlement + date d'encaissement effectifs (override compris, avec badge « Ajusté pour ce mois »). Symétrique sur l'onglet DG (initial / retenue / restitué). Tout via getters Alpine réactifs (`effectiveLoyer/Charges/PeriodeLabel`, `dgEffective*`).
+- ✅ **Lazy-load du module PDF** : `import('./lib/pdf.js')` dynamique mémoïsé. Bundle initial gzippé passe de ~178 kB à ~44 kB (-75%). `html2canvas` et `dompurify` (transitifs jsPDF) partent automatiquement dans le chunk lazy. Pré-cache SW garantit l'usage hors-ligne après 1ʳ visite.
+- ✅ **Modèles d'email** : `resetEmailTemplatePair(subjectKey, bodyKey)` demande une seule confirmation et applique sujet + corps en un seul `setTimeout` (avant : 2 confirms successifs). Modèles repliés par défaut dans Configuration.
+- ✅ **Durée d'archivage configurable** : `data.settings.archiveYears` (1/2/3/5/10, défaut 2), clampé via Zod, modifiable dans l'onglet Configuration. Migration automatique des payloads v2.2 sans cette clé.
+- ✅ **Accessibilité** : focus rings WCAG (`field-input`, `.btn:focus-visible`, onglets), `prefers-reduced-motion`, `<main>` landmark, `aria-live="polite"` annonçant le changement d'onglet (`currentTabLabel`), `scroll-margin-top: 6rem` sous le header sticky mobile, `<details>` avec chevron CSS rotatif (custom car Tailwind reset masque le natif).
+- ✅ **Sécurité / robustesse** : `formatMontant` et `formatDateFR` défensifs (NaN/format invalide → fallback affichable), `URL.createObjectURL` révoqué via `setTimeout 1000ms` pour ne pas être interrompu par `window.location.href = mailto:` sur Safari iOS.
+- ✅ **Renommage** : titre app `📄 Quittances & Dépôt de garantie` (au lieu de « Générateur de Quittances »), reflète la dualité quittance / DG en place depuis v2.1.
 
 ## Non-objectifs
 

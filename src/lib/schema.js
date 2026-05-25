@@ -129,8 +129,11 @@ const emailTemplatesSchema = z.object({
   dgSortieBody: z.string().default(DEFAULT_EMAIL_TEMPLATES.dgSortieBody),
 });
 
+// archiveYears : nombre d'années à conserver dans l'historique avant proposition d'archivage.
+// Borné à [1, 30] pour éviter une valeur absurde qui empêcherait toute purge.
 const settingsSchema = z.object({
   emailTemplates: emailTemplatesSchema.default({}),
+  archiveYears: z.coerce.number().int().min(1).max(30).default(2),
 });
 
 // Intégrité référentielle vérifiée à l'import : bien.bailleurId et locataire.bienId doivent pointer
@@ -143,7 +146,7 @@ export const dataSchema = z
     biens: z.array(bienSchema).default([]),
     locataires: z.array(locataireSchema).default([]),
     historique: z.array(historiqueEntrySchema).default([]),
-    settings: settingsSchema.default({ emailTemplates: { ...DEFAULT_EMAIL_TEMPLATES } }),
+    settings: settingsSchema.default({ emailTemplates: { ...DEFAULT_EMAIL_TEMPLATES }, archiveYears: 2 }),
   })
   .superRefine((data, ctx) => {
     const bailleurIds = new Set(data.bailleurs.map((b) => b.id));
@@ -175,7 +178,7 @@ export function emptyData() {
     biens: [],
     locataires: [],
     historique: [],
-    settings: { emailTemplates: { ...DEFAULT_EMAIL_TEMPLATES } },
+    settings: { emailTemplates: { ...DEFAULT_EMAIL_TEMPLATES }, archiveYears: 2 },
   };
 }
 
@@ -288,6 +291,10 @@ function normalizeHistoriqueEntry(raw) {
 
 function normalizeSettings(raw) {
   const tpl = raw?.emailTemplates || {};
+  // archiveYears : clampé à [1, 30] pour éviter une valeur corrompue qui empêcherait l'archivage.
+  let archiveYears = Number(raw?.archiveYears);
+  if (!Number.isFinite(archiveYears) || archiveYears < 1) archiveYears = 2;
+  if (archiveYears > 30) archiveYears = 30;
   return {
     emailTemplates: {
       quittanceSubject: tpl.quittanceSubject || DEFAULT_EMAIL_TEMPLATES.quittanceSubject,
@@ -297,6 +304,7 @@ function normalizeSettings(raw) {
       dgSortieSubject: tpl.dgSortieSubject || DEFAULT_EMAIL_TEMPLATES.dgSortieSubject,
       dgSortieBody: tpl.dgSortieBody || DEFAULT_EMAIL_TEMPLATES.dgSortieBody,
     },
+    archiveYears: Math.round(archiveYears),
   };
 }
 

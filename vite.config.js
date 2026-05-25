@@ -15,9 +15,9 @@ export default defineConfig({
       injectRegister: false,
       strategies: 'generateSW',
       manifest: {
-        name: 'Quittance — Générateur de quittances de loyer',
+        name: 'Quittances & Dépôt de garantie',
         short_name: 'Quittance',
-        description: 'Générateur de quittances de loyer local-first, gratuit, open-source.',
+        description: 'Générateur de quittances de loyer et de reçus de dépôt de garantie, local-first, gratuit, open-source.',
         lang: 'fr',
         theme_color: '#0071e3',
         background_color: '#ffffff',
@@ -46,11 +46,6 @@ export default defineConfig({
             url: './?tab=historique',
           },
         ],
-        share_target: {
-          action: './',
-          method: 'GET',
-          params: { title: 'title', text: 'text', url: 'url' },
-        },
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,ttf,woff2}'],

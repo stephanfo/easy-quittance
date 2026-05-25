@@ -15,7 +15,7 @@ describe('emptyData', () => {
       biens: [],
       locataires: [],
       historique: [],
-      settings: { emailTemplates: { ...DEFAULT_EMAIL_TEMPLATES } },
+      settings: { emailTemplates: { ...DEFAULT_EMAIL_TEMPLATES }, archiveYears: 2 },
     });
   });
 });
@@ -367,5 +367,18 @@ describe('migrate — V2.2 (templates email + retenuesTexte)', () => {
       ],
     });
     expect(r.historique[0].retenuesTexte).toBe('Peinture 200€\nNettoyage 50€');
+  });
+
+  it('settings.archiveYears : défaut 2, clampé [1, 30], coercé en entier', () => {
+    expect(migrate({}).settings.archiveYears).toBe(2);
+    expect(migrate({ settings: { archiveYears: 5 } }).settings.archiveYears).toBe(5);
+    // Valeurs invalides → fallback 2
+    expect(migrate({ settings: { archiveYears: 'foo' } }).settings.archiveYears).toBe(2);
+    expect(migrate({ settings: { archiveYears: 0 } }).settings.archiveYears).toBe(2);
+    expect(migrate({ settings: { archiveYears: -5 } }).settings.archiveYears).toBe(2);
+    // Clamp haut
+    expect(migrate({ settings: { archiveYears: 100 } }).settings.archiveYears).toBe(30);
+    // Coerce en entier
+    expect(migrate({ settings: { archiveYears: 3.7 } }).settings.archiveYears).toBe(4);
   });
 });

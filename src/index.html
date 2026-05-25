@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="description" content="Générateur de quittances de loyer local-first, gratuit, open-source." />
+  <meta name="description" content="Générateur de quittances de loyer et de reçus de dépôt de garantie, local-first, gratuit, open-source." />
   <meta name="theme-color" content="#0071e3" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -11,17 +11,17 @@
   <link rel="icon" href="./favicon.ico" sizes="48x48" />
   <link rel="icon" href="./icon.svg" sizes="any" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="./apple-touch-icon-180x180.png" />
-  <title>Générateur de Quittances</title>
+  <title>Quittances & Dépôt de garantie</title>
 </head>
-<body class="p-2 sm:p-5" x-data="app" x-cloak>
+<body class="p-0 sm:p-5" x-data="app" x-cloak>
 
   <!-- Bannière : modifications non exportées -->
   <div
     x-show="dirty"
     x-transition.opacity
-    role="alert"
+    role="status"
     aria-live="polite"
-    class="sticky top-[max(0.5rem,env(safe-area-inset-top))] z-50 mx-auto mb-3 flex max-w-5xl flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-md sm:top-5">
+    class="sticky top-[env(safe-area-inset-top)] z-50 mx-2 mb-3 flex max-w-5xl flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-md sm:mx-auto sm:top-5">
     <span class="min-w-0 flex-1">
       <span aria-hidden="true" class="mr-1">💾</span>
       Modification sauvegardée dans le navigateur, mais pensez à exporter vos données pour ne rien perdre.
@@ -44,11 +44,12 @@
     </div>
   </div>
 
-  <div class="container mx-auto max-w-5xl rounded-xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-md sm:p-8 sm:pb-[max(2rem,env(safe-area-inset-bottom))]">
-    <h1 class="mb-5 text-2xl font-semibold sm:text-3xl">📄 Générateur de Quittances de Loyer</h1>
+  <div class="container mx-auto max-w-5xl bg-white p-4 pt-0 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-xl sm:p-8 sm:pb-[max(2rem,env(safe-area-inset-bottom))] sm:shadow-md">
+    <header class="app-header -mx-4 mb-6 bg-white px-4 pt-[max(1rem,env(safe-area-inset-top))] sm:-mx-8 sm:mb-6 sm:px-8 sm:pt-0">
+      <h1 class="mb-3 text-xl font-semibold sm:mb-5 sm:text-3xl">📄 Quittances & Dépôt de garantie</h1>
 
-    <!-- Tabs -->
-    <div class="scrollbar-tabs -mx-2 mb-6 flex gap-1 overflow-x-auto border-b-2 border-apple-border px-2 sm:gap-2" role="tablist" aria-label="Sections" @keydown="onTabsKey($event)">
+      <!-- Tabs -->
+      <div class="scrollbar-tabs -mx-2 flex gap-1 overflow-x-auto border-b-2 border-apple-border px-2 sm:gap-2" role="tablist" aria-label="Sections" @keydown="onTabsKey($event)">
       <button
         type="button"
         role="tab"
@@ -57,7 +58,7 @@
         id="tab-generate"
         aria-controls="panel-generate"
         @click="switchTab('generate')"
-        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
+        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap rounded-t border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-apple-blue sm:px-5 sm:text-base"
         :class="activeTab === 'generate' && 'text-apple-blue !border-apple-blue'">
         Quittance
       </button>
@@ -69,7 +70,7 @@
         id="tab-depot-garantie"
         aria-controls="panel-depot-garantie"
         @click="switchTab('depot-garantie')"
-        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
+        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap rounded-t border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-apple-blue sm:px-5 sm:text-base"
         :class="activeTab === 'depot-garantie' && 'text-apple-blue !border-apple-blue'">
         Dépôt de garantie
       </button>
@@ -81,7 +82,7 @@
         id="tab-historique"
         aria-controls="panel-historique"
         @click="switchTab('historique')"
-        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
+        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap rounded-t border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-apple-blue sm:px-5 sm:text-base"
         :class="activeTab === 'historique' && 'text-apple-blue !border-apple-blue'">
         Historique
       </button>
@@ -93,7 +94,7 @@
         id="tab-locataires"
         aria-controls="panel-locataires"
         @click="switchTab('locataires')"
-        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
+        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap rounded-t border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-apple-blue sm:px-5 sm:text-base"
         :class="activeTab === 'locataires' && 'text-apple-blue !border-apple-blue'">
         Locataires
       </button>
@@ -105,7 +106,7 @@
         id="tab-patrimoine"
         aria-controls="panel-patrimoine"
         @click="switchTab('patrimoine')"
-        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
+        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap rounded-t border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-apple-blue sm:px-5 sm:text-base"
         :class="activeTab === 'patrimoine' && 'text-apple-blue !border-apple-blue'">
         Patrimoine
       </button>
@@ -117,11 +118,19 @@
         id="tab-configuration"
         aria-controls="panel-configuration"
         @click="switchTab('configuration')"
-        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
+        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap rounded-t border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-apple-blue sm:px-5 sm:text-base"
         :class="activeTab === 'configuration' && 'text-apple-blue !border-apple-blue'">
         Configuration
       </button>
-    </div>
+      </div>
+    </header>
+
+    <!-- Annonce du changement d'onglet pour lecteurs d'écran. sr-only = visuellement masqué
+         mais lu par NVDA/VoiceOver. Quand activeTab change, le texte change et l'aria-live
+         déclenche l'annonce. -->
+    <div aria-live="polite" aria-atomic="true" class="sr-only" x-text="`Onglet ${currentTabLabel} affiché`"></div>
+
+    <main>
 
     <!-- Panel : Générer -->
     <section
@@ -129,6 +138,7 @@
       role="tabpanel"
       aria-labelledby="tab-generate"
       tabindex="-1"
+      class="panel-with-cta"
       x-show="activeTab === 'generate'">
       <h2 class="mb-5 text-xl font-semibold sm:text-2xl">Générer une quittance</h2>
 
@@ -144,7 +154,7 @@
           <label for="selectBailleur" class="field-label">Bailleur</label>
           <select
             id="selectBailleur"
-            class="field-input text-lg font-medium"
+            class="field-input"
             x-model="selectedBailleurId">
             <option value="">-- Sélectionner un bailleur --</option>
             <template x-for="b in data.bailleurs" :key="b.id">
@@ -157,7 +167,7 @@
           <label for="selectLocataire" class="field-label">Locataire</label>
           <select
             id="selectLocataire"
-            class="field-input text-lg font-medium"
+            class="field-input"
             x-model="selectedLocataireId"
             @change="onSelectLocataire()"
             :disabled="!selectedBailleurId">
@@ -195,13 +205,46 @@
         </div>
       </div>
 
-      <!-- Aperçu du bien sélectionné -->
-      <div class="card-section mb-4" x-show="selectedBien">
-        <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-apple-muted">Bien loué</h3>
-        <div class="text-sm">
+      <!-- Aperçu de la quittance en cours (bien + période + montants effectifs) -->
+      <div class="card-section mb-4" x-show="selectedLocataire">
+        <div class="mb-2 flex items-center gap-2">
+          <h3 class="text-sm font-semibold uppercase tracking-wide text-apple-muted">Aperçu de la quittance</h3>
+          <span
+            x-show="overrideMontants"
+            class="inline-flex items-center rounded bg-apple-warning/15 px-1.5 py-0.5 text-xs font-medium text-apple-warning">
+            Ajusté pour ce mois
+          </span>
+        </div>
+        <div class="text-sm" x-show="selectedBien">
           <div class="font-medium" x-text="selectedBien?.libelle + (selectedBien?.type ? ' (' + selectedBien.type + ')' : '')"></div>
           <div class="text-apple-muted whitespace-pre-line" x-text="selectedBien?.adresse"></div>
           <div class="mt-1 text-xs text-apple-muted" x-show="selectedBien?.reference">Réf. <span x-text="selectedBien?.reference"></span></div>
+        </div>
+        <div class="mt-3 border-t border-apple-border pt-3 text-sm">
+          <div class="flex justify-between gap-3">
+            <span class="text-apple-muted">Période</span>
+            <span class="text-right" x-text="effectivePeriodeLabel || '—'"></span>
+          </div>
+          <div class="mt-2 flex justify-between gap-3 tabular-nums">
+            <span class="text-apple-muted">Loyer</span>
+            <span><span x-text="effectiveLoyer.toFixed(2)"></span>&nbsp;€</span>
+          </div>
+          <div class="mt-1 flex justify-between gap-3 tabular-nums">
+            <span class="text-apple-muted">Charges</span>
+            <span><span x-text="effectiveCharges.toFixed(2)"></span>&nbsp;€</span>
+          </div>
+          <div class="mt-2 flex justify-between gap-3 border-t border-apple-border pt-2 text-base font-semibold tabular-nums">
+            <span>Total mensuel</span>
+            <span><span x-text="(effectiveLoyer + effectiveCharges).toFixed(2)"></span>&nbsp;€</span>
+          </div>
+          <div class="mt-2 flex justify-between gap-3 text-xs text-apple-muted" x-show="modeReglement">
+            <span>Mode de règlement</span>
+            <span class="text-right" x-text="modeReglement"></span>
+          </div>
+          <div class="mt-1 flex justify-between gap-3 text-xs text-apple-muted" x-show="dateEncaissement">
+            <span>Date d'encaissement</span>
+            <span class="text-right" x-text="formatDateFR(dateEncaissement)"></span>
+          </div>
         </div>
       </div>
 
@@ -267,7 +310,7 @@
           <div>
             <label for="dateEncaissement" class="field-label">Date d'encaissement</label>
             <input type="date" id="dateEncaissement" class="field-input" x-model="dateEncaissement" />
-            <p class="field-help">Utile pour les locataires CAF.</p>
+            <p class="field-help">Utile pour les locataires CAF. Si vide, la date du jour fera foi.</p>
           </div>
         </div>
       </div>
@@ -283,8 +326,8 @@
       </div>
 
       <div class="actions-cta">
-        <button type="button" class="btn flex-1" @click="generatePDF()">📥 Télécharger la quittance PDF</button>
-        <button type="button" class="btn btn-success flex-1" @click="generateAndEmail()">📧 Télécharger et préparer l'email</button>
+        <button type="button" class="btn flex-1" :disabled="_busy" @click="generatePDF()" x-text="_busy ? '⏳ Génération…' : '📥 Télécharger la quittance PDF'">📥 Télécharger la quittance PDF</button>
+        <button type="button" class="btn btn-success flex-1" :disabled="_busy" @click="generateAndEmail()" x-text="_busy ? '⏳ Génération…' : '📧 Télécharger et préparer l\'email'">📧 Télécharger et préparer l'email</button>
       </div>
     </section>
 
@@ -294,6 +337,7 @@
       role="tabpanel"
       aria-labelledby="tab-depot-garantie"
       tabindex="-1"
+      class="panel-with-cta"
       x-show="activeTab === 'depot-garantie'">
       <h2 class="mb-5 text-xl font-semibold sm:text-2xl">Dépôt de garantie</h2>
 
@@ -383,9 +427,44 @@
         <div class="field-help">Texte libre, multi-ligne. Les retours à la ligne sont préservés dans le PDF.</div>
       </div>
 
+      <!-- Aperçu du reçu DG (montants effectifs + dates) — symétrique à l'aperçu Quittance -->
+      <div class="card-section mb-4" x-show="dgSelectedLocataire">
+        <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-apple-muted">
+          <span x-show="dgSousType === 'entree'">Aperçu du reçu d'encaissement</span>
+          <span x-show="dgSousType === 'sortie'">Aperçu du reçu de restitution</span>
+        </h3>
+        <div class="text-sm" x-show="dgSelectedBien">
+          <div class="font-medium" x-text="dgSelectedBien?.libelle + (dgSelectedBien?.type ? ' (' + dgSelectedBien.type + ')' : '')"></div>
+          <div class="text-apple-muted whitespace-pre-line" x-text="dgSelectedBien?.adresse"></div>
+        </div>
+        <div class="mt-3 border-t border-apple-border pt-3 text-sm">
+          <div class="flex justify-between gap-3 tabular-nums">
+            <span class="text-apple-muted">Dépôt de garantie initial</span>
+            <span><span x-text="dgEffectiveMontantInitial.toFixed(2)"></span>&nbsp;€</span>
+          </div>
+          <template x-if="dgSousType === 'sortie'">
+            <div>
+              <div class="mt-1 flex justify-between gap-3 tabular-nums">
+                <span class="text-apple-muted">Retenues éventuelles</span>
+                <span><span x-text="dgEffectiveRetenu.toFixed(2)"></span>&nbsp;€</span>
+              </div>
+              <div class="mt-2 flex justify-between gap-3 border-t border-apple-border pt-2 text-base font-semibold tabular-nums">
+                <span>Montant restitué</span>
+                <span><span x-text="dgEffectiveMontantRestitue.toFixed(2)"></span>&nbsp;€</span>
+              </div>
+            </div>
+          </template>
+          <div class="mt-2 flex justify-between gap-3 text-xs text-apple-muted" x-show="dgDateEvenement">
+            <span x-show="dgSousType === 'entree'">Date d'encaissement</span>
+            <span x-show="dgSousType === 'sortie'">Date de restitution</span>
+            <span class="text-right" x-text="formatDateFR(dgDateEvenement)"></span>
+          </div>
+        </div>
+      </div>
+
       <div class="actions-cta">
-        <button type="button" class="btn flex-1" @click="generateRecuDG()">📥 Télécharger le reçu PDF</button>
-        <button type="button" class="btn btn-success flex-1" @click="generateRecuDGAndEmail()">📧 Télécharger et préparer l'email</button>
+        <button type="button" class="btn flex-1" :disabled="_busy" @click="generateRecuDG()" x-text="_busy ? '⏳ Génération…' : '📥 Télécharger le reçu PDF'">📥 Télécharger le reçu PDF</button>
+        <button type="button" class="btn btn-success flex-1" :disabled="_busy" @click="generateRecuDGAndEmail()" x-text="_busy ? '⏳ Génération…' : '📧 Télécharger et préparer l\'email'">📧 Télécharger et préparer l'email</button>
       </div>
     </section>
 
@@ -606,7 +685,7 @@
               <span aria-hidden="true">🕒</span> Générée le <span x-text="formatDateGeneration(entry.dateGeneration)"></span>
             </div>
             <div class="flex w-full shrink-0 justify-end gap-2 sm:ml-auto sm:w-auto">
-              <button type="button" class="btn btn-secondary btn-small" @click="regenererPDF(entry)">🔁 Regénérer</button>
+              <button type="button" class="btn btn-secondary btn-small" :disabled="_busy" @click="regenererPDF(entry)">🔁 Regénérer</button>
               <button type="button" class="btn btn-danger btn-small" @click="supprimerEntreeHistorique(entry.id)">🗑️ Supprimer</button>
             </div>
           </li>
@@ -734,7 +813,7 @@
         </div>
 
         <!-- Quittance -->
-        <details class="mb-3 rounded-lg border border-apple-border bg-white" open>
+        <details class="mb-3 rounded-lg border border-apple-border bg-white">
           <summary class="cursor-pointer select-none px-3 py-2 font-medium">Quittance de loyer</summary>
           <div class="space-y-3 border-t border-apple-border p-3">
             <div>
@@ -757,7 +836,7 @@
                 @input="persistTemplates()"
               ></textarea>
             </div>
-            <button type="button" class="btn btn-secondary btn-small" @click="resetEmailTemplate('quittanceSubject'); resetEmailTemplate('quittanceBody')">
+            <button type="button" class="btn btn-secondary btn-small" @click="resetEmailTemplatePair('quittanceSubject', 'quittanceBody')">
               ↺ Réinitialiser ce modèle
             </button>
           </div>
@@ -787,7 +866,7 @@
                 @input="persistTemplates()"
               ></textarea>
             </div>
-            <button type="button" class="btn btn-secondary btn-small" @click="resetEmailTemplate('dgEntreeSubject'); resetEmailTemplate('dgEntreeBody')">
+            <button type="button" class="btn btn-secondary btn-small" @click="resetEmailTemplatePair('dgEntreeSubject', 'dgEntreeBody')">
               ↺ Réinitialiser ce modèle
             </button>
           </div>
@@ -817,7 +896,7 @@
                 @input="persistTemplates()"
               ></textarea>
             </div>
-            <button type="button" class="btn btn-secondary btn-small" @click="resetEmailTemplate('dgSortieSubject'); resetEmailTemplate('dgSortieBody')">
+            <button type="button" class="btn btn-secondary btn-small" @click="resetEmailTemplatePair('dgSortieSubject', 'dgSortieBody')">
               ↺ Réinitialiser ce modèle
             </button>
           </div>
@@ -864,13 +943,27 @@
           </p>
         </template>
 
+        <div class="mb-3 flex flex-wrap items-center gap-2 text-sm">
+          <label for="archiveYears" class="text-apple-muted">Conserver l'historique pendant</label>
+          <select
+            id="archiveYears"
+            class="rounded-md border border-apple-border bg-white px-2 py-1 text-sm"
+            x-model.number="data.settings.archiveYears"
+            @change="persist(); dirty = true">
+            <option :value="1">1 an</option>
+            <option :value="2">2 ans</option>
+            <option :value="3">3 ans</option>
+            <option :value="5">5 ans</option>
+            <option :value="10">10 ans</option>
+          </select>
+        </div>
         <button
           type="button"
           class="btn btn-secondary btn-small"
-          @click="archiveAncienHistorique(2)"
-          :disabled="countHistoriqueOlderThan(2) === 0">
-          🗄️ Archiver l'historique de plus de 2 ans
-          <span class="ml-1 text-apple-muted" x-text="`(${countHistoriqueOlderThan(2)})`"></span>
+          @click="archiveAncienHistorique(data.settings.archiveYears)"
+          :disabled="countHistoriqueOlderThan(data.settings.archiveYears) === 0">
+          🗄️ Archiver l'historique de plus de <span x-text="data.settings.archiveYears"></span> an<span x-show="data.settings.archiveYears > 1">s</span>
+          <span class="ml-1 text-apple-muted" x-text="`(${countHistoriqueOlderThan(data.settings.archiveYears)})`"></span>
         </button>
       </div>
 
@@ -883,6 +976,8 @@
         </p>
       </div>
     </section>
+
+    </main>
 
     <!-- Modal locataire (création + édition) -->
     <div

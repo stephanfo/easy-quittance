@@ -12,6 +12,15 @@
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
   }
+  /* Sur mobile, le container occupe tout le viewport et le sticky CTA est en
+     position:fixed — l'overscroll élastique iOS révèle alors le fond du body.
+     On le met en blanc (resp. surface sombre en dark mode) pour éviter la
+     bande grise visible en bas/haut de scroll. */
+  @media (max-width: 640px) {
+    body {
+      background: white;
+    }
+  }
   /* Empêche le zoom auto iOS sur les inputs */
   input[type='text'],
   input[type='email'],
@@ -72,26 +81,82 @@
   .card-section {
     @apply rounded-lg bg-apple-bg p-4;
   }
-  /* Sticky CTA mobile : conteneur d'actions de génération qui reste collé en bas
-     de la vue sur petit écran. Désactivé en sm+ — rendu identique à l'actuel.
-     ATTENTION : les marges latérales -1.25rem compensent le `p-5` du container
-     parent (src/index.html, div.container). Si le padding du container change
-     (ex. `p-6`), il faut mettre à jour ces valeurs en miroir, sinon le CTA ne
-     déborde plus en pleine largeur du viewport. */
+  /* Chevron visible sur les <details> (Tailwind reset cache le triangle natif).
+     `summary::-webkit-details-marker` couvre Safari ; `details > summary { list-style }`
+     couvre Firefox/Chrome. On dessine ensuite un chevron CSS qui pivote à l'ouverture. */
+  details > summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+  details > summary::before {
+    content: '';
+    width: 0.5rem;
+    height: 0.5rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 150ms ease;
+    flex-shrink: 0;
+    opacity: 0.6;
+  }
+  details[open] > summary::before {
+    transform: rotate(45deg);
+  }
+  /* Header mobile : sur petit écran, le titre + barre d'onglets reste collé
+     en haut du viewport. Sur sm+, rendu inline classique (le grand écran a
+     assez de hauteur pour que ce ne soit pas nécessaire). Le padding-top
+     intègre le safe-area iOS pour couvrir la status bar transparente. */
+  @media (max-width: 640px) {
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: white;
+      box-shadow: 0 4px 12px -8px rgba(0, 0, 0, 0.15);
+    }
+    /* Sous le sticky header (~6 rem), les éléments scrollés via .focus() ou via
+       les ancres natives doivent prévoir une marge pour ne pas être masqués. */
+    [role='tabpanel'],
+    h2,
+    h3,
+    .field-input,
+    .btn {
+      scroll-margin-top: 6rem;
+    }
+  }
+
+  /* CTA mobile : sur petit écran, le conteneur d'actions de génération est
+     position: fixed au viewport (pas de "remontée" en fin de scroll, pas de
+     bande grise révélée par l'overscroll iOS). Pleine largeur via left/right: 0
+     + padding latéral safe-area-inset pour épouser les bords sans rogner.
+     Sur sm+, rendu inline classique. Les panels concernés ajoutent un
+     `panel-with-cta` pour ménager l'espace en bas du formulaire. */
   .actions-cta {
     @apply flex flex-col gap-2 sm:flex-row sm:flex-wrap;
   }
   @media (max-width: 640px) {
     .actions-cta {
-      position: sticky;
+      position: fixed;
+      left: 0;
+      right: 0;
       bottom: 0;
       z-index: 30;
-      margin-left: -1.25rem;
-      margin-right: -1.25rem;
-      padding: 0.75rem 1.25rem max(0.75rem, env(safe-area-inset-bottom));
-      background: var(--surface-cta, theme('colors.apple.bg'));
+      padding: 0.75rem 1rem max(0.75rem, env(safe-area-inset-bottom));
+      padding-left: max(1rem, env(safe-area-inset-left));
+      padding-right: max(1rem, env(safe-area-inset-right));
+      background: var(--surface-cta, white);
       border-top: 1px solid theme('colors.apple.border');
       box-shadow: 0 -4px 12px -8px rgba(0, 0, 0, 0.15);
+    }
+    /* Réserve de l'espace en bas du panel pour ne pas masquer le dernier champ
+       sous le CTA fixe (~ 56 px CTA + safe-area + petite marge). */
+    .panel-with-cta {
+      padding-bottom: calc(5rem + env(safe-area-inset-bottom));
     }
   }
 }
@@ -120,7 +185,7 @@
    Le PDF généré par jsPDF reste indépendant — il n'utilise aucune CSS var.       */
 @media (prefers-color-scheme: dark) {
   :root {
-    --surface-cta: #1c1c1e;
+    --surface-cta: #2c2c2e;
   }
   html {
     color-scheme: dark;
@@ -128,6 +193,17 @@
   body {
     background: #1c1c1e;
     color: #f5f5f7;
+  }
+  /* Mobile dark : aligner le body sur la couleur du container (.bg-white →
+     #2c2c2e) pour éviter la bande sombre visible à l'overscroll iOS.
+     L'app-header sticky doit aussi reprendre cette couleur. */
+  @media (max-width: 640px) {
+    body {
+      background: #2c2c2e;
+    }
+    .app-header {
+      background: #2c2c2e;
+    }
   }
   .bg-white {
     background-color: #2c2c2e !important;
