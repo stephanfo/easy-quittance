@@ -1,13 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildHistoriqueEntry,
+  buildHistoriqueRecuEntry,
   findDoublons,
+  findDoublonsRecu,
   filterAndSort,
   listeFiltreLocataires,
   listeFiltreAnnees,
   listeFiltreBiens,
   generateHistoriqueId,
   nextNumeroQuittance,
+  nextNumeroRecu,
+  resolveBailleurForRender,
 } from '../lib/historique.js';
 
 const bailleur = { id: 'ba_1', nom: 'Bob', adresse: '1 rue', ville: 'Paris', signature: 'B.' };
@@ -346,5 +350,173 @@ describe('nextNumeroQuittance', () => {
   it("pad moisNum à 2 chiffres si l'appelant donne un nombre brut", () => {
     expect(nextNumeroQuittance([], 'ba_1', 5, '2026')).toBe('Q-202605-001');
     expect(nextNumeroQuittance([], 'ba_1', '5', '2026')).toBe('Q-202605-001');
+  });
+});
+
+describe('buildHistoriqueRecuEntry', () => {
+  it('produit une entrée de type recu_dg_entree avec les montants', () => {
+    const e = buildHistoriqueRecuEntry({
+      sousType: 'entree',
+      bailleur,
+      bien,
+      locataire,
+      montantInitial: 1700,
+      dateEvenement: '2026-05-15',
+      numeroRecu: 'DG-E-2026-001',
+    });
+    expect(e.type).toBe('recu_dg_entree');
+    expect(e.montantInitial).toBe(1700);
+    expect(e.montantRestitue).toBe(0);
+    expect(e.annee).toBe('2026');
+    expect(e.dateEvenement).toBe('2026-05-15');
+    expect(e.bailleurId).toBe('ba_1');
+    expect(e.bailleur.signatureActive).toBe(true);
+    // Pas de signatureImage ni logo dans le snapshot (économie storage).
+    expect(e.bailleur.signatureImage).toBeUndefined();
+    expect(e.bailleur.logo).toBeUndefined();
+  });
+
+  it('produit une entrée de type recu_dg_sortie avec retenuesTexte', () => {
+    const e = buildHistoriqueRecuEntry({
+      sousType: 'sortie',
+      bailleur,
+      bien,
+      locataire,
+      montantInitial: 1700,
+      montantRestitue: 1500,
+      retenuesTexte: 'Peinture 200€\nNettoyage 50€',
+      dateEvenement: '2027-01-10',
+      numeroRecu: 'DG-S-2027-001',
+    });
+    expect(e.type).toBe('recu_dg_sortie');
+    expect(e.montantRestitue).toBe(1500);
+    expect(e.retenuesTexte).toContain('Peinture');
+    expect(e.retenuesTexte).toContain('Nettoyage');
+    expect(e.annee).toBe('2027');
+  });
+
+  it('rejette un sousType invalide', () => {
+    expect(() =>
+      buildHistoriqueRecuEntry({ sousType: 'autre', bailleur, bien, locataire }),
+    ).toThrow();
+  });
+});
+
+describe('nextNumeroRecu', () => {
+  it('démarre à 001 si aucun historique', () => {
+    expect(nextNumeroRecu([], 'ba_1', '2026', 'entree')).toBe('DG-E-2026-001');
+    expect(nextNumeroRecu([], 'ba_1', '2026', 'sortie')).toBe('DG-S-2026-001');
+  });
+
+  it('incrémente par (bailleur, annee, sousType)', () => {
+    const h = [
+      { bailleurId: 'ba_1', type: 'recu_dg_entree', numeroQuittance: 'DG-E-2026-001' },
+      { bailleurId: 'ba_1', type: 'recu_dg_entree', numeroQuittance: 'DG-E-2026-002' },
+    ];
+    expect(nextNumeroRecu(h, 'ba_1', '2026', 'entree')).toBe('DG-E-2026-003');
+  });
+
+  it('ignore les autres types et bailleurs', () => {
+    const h = [
+      { bailleurId: 'ba_1', type: 'recu_dg_entree', numeroQuittance: 'DG-E-2026-005' },
+      { bailleurId: 'ba_2', type: 'recu_dg_entree', numeroQuittance: 'DG-E-2026-009' },
+      { bailleurId: 'ba_1', type: 'recu_dg_sortie', numeroQuittance: 'DG-S-2026-001' },
+      { bailleurId: 'ba_1', type: 'quittance', numeroQuittance: 'Q-202605-001' },
+    ];
+    expect(nextNumeroRecu(h, 'ba_1', '2026', 'entree')).toBe('DG-E-2026-006');
+    expect(nextNumeroRecu(h, 'ba_1', '2026', 'sortie')).toBe('DG-S-2026-002');
+  });
+
+  it('repart à 001 pour une autre année', () => {
+    const h = [
+      { bailleurId: 'ba_1', type: 'recu_dg_entree', numeroQuittance: 'DG-E-2026-005' },
+    ];
+    expect(nextNumeroRecu(h, 'ba_1', '2027', 'entree')).toBe('DG-E-2027-001');
+  });
+});
+
+describe('findDoublonsRecu', () => {
+  it('détecte un reçu existant par (bailleurId, locataire.nom, sousType)', () => {
+    const h = [
+      { bailleurId: 'ba_1', type: 'recu_dg_entree', locataire: { nom: 'Alice' } },
+      { bailleurId: 'ba_1', type: 'recu_dg_sortie', locataire: { nom: 'Alice' } },
+    ];
+    expect(findDoublonsRecu(h, 'ba_1', 'Alice', 'entree')).toHaveLength(1);
+    expect(findDoublonsRecu(h, 'ba_1', 'Alice', 'sortie')).toHaveLength(1);
+  });
+
+  it('ne mélange pas avec un homonyme chez un autre bailleur', () => {
+    const h = [{ bailleurId: 'ba_2', type: 'recu_dg_entree', locataire: { nom: 'Alice' } }];
+    expect(findDoublonsRecu(h, 'ba_1', 'Alice', 'entree')).toHaveLength(0);
+  });
+
+  it('ignore les quittances classiques', () => {
+    const h = [{ bailleurId: 'ba_1', type: 'quittance', locataire: { nom: 'Alice' } }];
+    expect(findDoublonsRecu(h, 'ba_1', 'Alice', 'entree')).toHaveLength(0);
+  });
+});
+
+describe('findDoublons (quittances) — anti-mélange avec reçus DG', () => {
+  it('exclut les entrées de type recu_dg_*', () => {
+    const h = [
+      { bailleurId: 'ba_1', type: 'recu_dg_entree', locataire: { nom: 'Alice' }, moisNum: '05', annee: '2026' },
+      { bailleurId: 'ba_1', type: 'quittance', locataire: { nom: 'Alice' }, moisNum: '05', annee: '2026' },
+    ];
+    const doublons = findDoublons(h, 'ba_1', 'Alice', '05', '2026');
+    expect(doublons).toHaveLength(1);
+    expect(doublons[0].type).toBe('quittance');
+  });
+
+  it('rétrocompat : type absent = quittance', () => {
+    const h = [{ bailleurId: 'ba_1', locataire: { nom: 'Alice' }, moisNum: '05', annee: '2026' }];
+    expect(findDoublons(h, 'ba_1', 'Alice', '05', '2026')).toHaveLength(1);
+  });
+});
+
+describe('resolveBailleurForRender', () => {
+  const entry = {
+    bailleurId: 'ba_1',
+    bailleur: { nom: 'Bob', signature: 'B.', signatureActive: false },
+  };
+  const courants = [
+    {
+      id: 'ba_1',
+      nom: 'Bob',
+      signatureActive: true,
+      signatureImage: 'data:image/png;base64,abc',
+      logo: 'data:image/png;base64,def',
+    },
+  ];
+
+  it('renvoie image et logo du bailleur courant si trouvé', () => {
+    const res = resolveBailleurForRender(entry, courants);
+    expect(res.signatureImage).toBe('data:image/png;base64,abc');
+    expect(res.logo).toBe('data:image/png;base64,def');
+    expect(res.signatureActive).toBe(true);
+  });
+
+  it('fallback gracieux : bailleur supprimé → signatureActive du snapshot, pas d\'image', () => {
+    const res = resolveBailleurForRender(entry, []);
+    expect(res.signatureImage).toBe('');
+    expect(res.logo).toBe('');
+    expect(res.signatureActive).toBe(false);
+  });
+
+  it('fallback : signatureActive absent du snapshot → true', () => {
+    const e = { bailleurId: 'ba_x', bailleur: { nom: 'X' } };
+    const res = resolveBailleurForRender(e, []);
+    expect(res.signatureActive).toBe(true);
+  });
+});
+
+describe('filterAndSort — filtre type', () => {
+  it('filtre par type', () => {
+    const h = [
+      { id: '1', type: 'quittance', dateGeneration: '2026-05-01T10:00:00Z', locataire: {}, annee: '2026' },
+      { id: '2', type: 'recu_dg_entree', dateGeneration: '2026-05-02T10:00:00Z', locataire: {}, annee: '2026' },
+    ];
+    expect(filterAndSort(h, { type: 'quittance' })).toHaveLength(1);
+    expect(filterAndSort(h, { type: 'recu_dg_entree' })).toHaveLength(1);
+    expect(filterAndSort(h, {})).toHaveLength(2);
   });
 });

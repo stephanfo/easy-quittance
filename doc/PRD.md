@@ -1,7 +1,7 @@
 # PRD — Générateur de Quittances de Loyer
 
 > Document de cadrage produit. Voir aussi : [README.md](../README.md) (doc utilisateur).
-> Statut : v2.0 livrée · v2.1 en cours.
+> Statut : v2.2 livrée.
 
 ## Problème
 
@@ -96,13 +96,23 @@ Refonte du modèle de données : `bailleurs[] → biens[] → locataires[] → h
 - ✅ **Suppression en cascade** (avec confirmation détaillant l'impact) : supprimer un bailleur supprime ses biens et leurs locataires. L'historique est **toujours conservé** (journal légal append-only)
 - ✅ **Anti-doublon scopé par bailleur** : deux bailleurs peuvent avoir un locataire homonyme sans fausse alerte
 
-**v2.1 — Personnalisation PDF et robustesse données** *(en cours)*
+**v2.1 — Personnalisation PDF et robustesse données**
 
-- 🚧 **Signature image** du bailleur (upload local, base64, affichée sur la quittance à la place du nom en texte)
-- 🚧 **Logo bailleur** optionnel dans l'en-tête PDF (utile SCI / société civile)
-- 🚧 **Reçu de dépôt de garantie** : génération d'un document distinct + champ `depotGarantie` (montant) sur la fiche locataire
-- 🚧 **Contraste accessibilité renforcé** : textes mutés passés de ~4.1:1 à ~5.5:1 (WCAG AAA pour le corps de texte)
-- 🚧 **Détection localStorage saturé** : alerte utilisateur quand l'espace de stockage approche la limite (~5 Mo) + proposition d'archivage (export JSON + purge entrées >2 ans)
+- ✅ **Signature image** du bailleur (upload PNG/JPEG ≤500 Ko, base64, affichée dans le cadre signature avec le nom en petit dessous)
+- ✅ **Toggle d'activation de la signature** par bailleur : si désactivé, seul le nom du signataire apparaît sur les documents (pas de cadre)
+- ✅ **Logo bailleur** optionnel dans l'en-tête PDF (utile SCI / société civile), même upload UI que la signature
+- ✅ **Reçu de dépôt de garantie** : nouvel onglet « Dépôt de garantie » avec deux flux (encaissement à l'entrée, restitution à la sortie). Champ `depotGarantie` sur la fiche locataire. Sortie : champ texte multi-ligne pour le détail des retenues (simplifié en V2.2). Historique unifié avec discriminant `type` ∈ `quittance` / `recu_dg_entree` / `recu_dg_sortie`. Anti-doublon scopé par (bailleur, locataire, sousType)
+- ✅ **Snapshot historique allégé** : images base64 (signature + logo) ne sont **pas** dupliquées dans l'historique. À la réédition, on relit le bailleur courant via `resolveBailleurForRender` ; fallback gracieux sur le snapshot texte si le bailleur a été supprimé
+- ✅ **Renommage onglet** : « Générer » → « Quittance » ; nouvel onglet « Configuration » (placeholder + jauge storage)
+- ✅ **Contraste accessibilité renforcé** : couleur `apple-muted` passée de `#6e6e73` (~4.5:1) à `#5b5b60` (~5.9:1 sur blanc, ~5.5:1 sur le fond bg) — atteint WCAG AAA pour le corps de texte muted. PDF aligné (MUTED `[91,91,96]`).
+- ✅ **Détection localStorage saturé** : jauge dans l'onglet Configuration (statut `ok` / `warning` ≥70 % / `critical` ≥90 %), alerte forte si le navigateur refuse l'écriture (QuotaExceededError), bouton « Archiver l'historique de plus de 2 ans » avec confirmation et incitation à exporter d'abord
+
+**v2.2 — Templates email configurables + simplification retenues DG**
+
+- ✅ **Templates email personnalisables** dans l'onglet Configuration : 3 documents (quittance, reçu DG entrée, reçu DG sortie) × 2 champs (sujet, corps) = 6 textareas avec bouton « Réinitialiser » par template. Placeholders `{locataire}`, `{mois}`, `{annee}`, `{bailleur}`, `{signature}` substitués au moment de l'envoi via `renderTemplate` ([src/lib/email-template.js](../src/lib/email-template.js)). Persistance debouncée (400 ms) pour éviter d'écrire à chaque frappe. Stocké dans la nouvelle clé `data.settings.emailTemplates` (premier setting global du schema). Valeurs par défaut exposées via `DEFAULT_EMAIL_TEMPLATES`.
+- ✅ **Bouton email côté reçu DG** : symétrique à l'onglet Quittance, deux boutons (« Télécharger » + « Télécharger et préparer l'email ») dans l'onglet Dépôt de garantie. Nouvelle méthode `generateRecuDGAndEmail()`.
+- ✅ **Retrait Tiptap / simplification retenues** : l'éditeur WYSIWYG (gras/italique/souligné/listes) est remplacé par un simple `<textarea>` multi-ligne. Le champ snapshot historique passe de `retenuesHtml` (HTML restreint) à `retenuesTexte` (texte plat). Migration : les entrées V2.1 avec `retenuesHtml` sont **vidées** (décision assumée — feature récente, volume faible, et le HTML brut serait illisible sur le PDF texte plat).
+- ✅ **Allègement du bundle** : suppression des dépendances `@tiptap/core` + `@tiptap/starter-kit` + `@tiptap/extension-underline` (~40 Ko gzip), des fonts `Inter-Italic.ttf` + `Inter-BoldItalic.ttf` (~830 KiB précachés PWA), du parser HTML→PDF (`parseRichTextHtml` + `drawRichText` + tests, ~250 lignes). PWA precache passe de ~2500 KiB à ~1670 KiB.
 
 ## Non-objectifs
 
@@ -126,7 +136,7 @@ Volontairement **hors scope** :
 | PDF | jsPDF + police Inter (SIL OFL, lazy-load via `import.meta.url`) |
 | Validation | Zod (import JSON et futures migrations de schéma) |
 | Export XLSX | write-excel-file (chargé en lazy import) |
-| Tests | Vitest pour les fonctions pures (`nombreEnLettres`, période, schéma, historique) |
+| Tests | Vitest pour les fonctions pures (`nombreEnLettres`, période, schéma, historique, storage, email-template) |
 | Stockage | `localStorage` (clé `quittances_data`) |
 
 Le tout reste **100% client-side**, build produit du HTML/CSS/JS statique déployable n'importe où.

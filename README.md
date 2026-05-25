@@ -15,19 +15,24 @@ C'est exactement ce que fait cet outil. Stockage `localStorage`, génération PD
 ## Fonctionnalités
 
 - 📄 **Génération PDF** de quittances de loyer conformes (via [jsPDF](https://github.com/parallax/jsPDF)) — mise en page pro avec n° de quittance, encart période, tableau aligné loyer/charges/total, bloc signature et pied de page légal ; rendu en police [Inter](https://rsms.me/inter/) (accents et `€` propres)
+- ✍️ **Signature image** uploadable par bailleur (PNG/JPEG ≤ 500 Ko) affichée dans le cadre signature, ou désactivable via toggle (seul le nom du signataire apparaît alors)
+- 🏷️ **Logo bailleur** optionnel dans l'en-tête PDF (utile SCI / société civile)
+- 💰 **Reçu de dépôt de garantie** : génération de reçus d'encaissement (entrée) et de restitution (sortie) dans un onglet dédié, avec champ texte multi-ligne pour détailler les retenues sur la restitution
+- 📨 **Modèles d'email personnalisables** : sujet et corps de l'email préparé (quittance + reçus DG) configurables dans l'onglet Configuration, avec placeholders `{locataire}`, `{mois}`, `{annee}`, `{bailleur}`, `{signature}` et bouton « Réinitialiser » par template
 - 🗓️ **Période couverte explicite** sur la quittance (1er au dernier jour du mois, personnalisable)
 - 💳 **Mode de règlement** (virement / chèque / espèces / autre), défaut par locataire
 - 📥 **Date d'encaissement** optionnelle (utile pour les locataires CAF)
 - 🧑‍💼 **Multi-bailleurs / SCI** : gérez plusieurs bailleurs (personne physique ou morale), chacun avec sa propre numérotation comptable
 - 🏠 **Multi-biens** : un bailleur peut posséder plusieurs biens (appartement, maison, studio, local, parking…), avec adresse et référence interne
-- 👥 **Gestion des locataires** : ajout, modification, suppression, rattachés à un bien, avec référence de bail et co-occupants (colocation) optionnels
-- 🔢 **Numérotation automatique** des quittances émises (`Q-YYYYMM-NNN`), incrémentée par mois et **par bailleur**
+- 👥 **Gestion des locataires** : ajout, modification, suppression, rattachés à un bien, avec référence de bail, co-occupants (colocation) et dépôt de garantie optionnels
+- 🔢 **Numérotation automatique** des quittances émises (`Q-YYYYMM-NNN`) et des reçus DG (`DG-E-YYYY-NNN` / `DG-S-YYYY-NNN`), incrémentée **par bailleur**
 - ✏️ **Override mensuel** : modifier ponctuellement le loyer ou les charges pour un mois donné
 - 📧 **Préparation d'email** : ouvre votre client mail avec sujet et corps pré-remplis (PDF à attacher manuellement)
-- 📋 **Historique des quittances** : journal local de toutes les quittances émises, alerte anti-doublon, regénération à l'identique du PDF, filtres bailleur/bien/locataire/année, export XLSX
+- 📋 **Historique unifié** : journal local de toutes les quittances et reçus DG émis, alerte anti-doublon, regénération à l'identique du PDF, filtres type/bailleur/bien/locataire/année, export XLSX
 - 💾 **Export / import JSON** : sauvegarde et restauration de toutes vos données (validées par schéma)
+- 📊 **Onglet Configuration** : jauge de l'espace de stockage local utilisé (alerte à 70 %, critique à 90 %) avec bouton d'archivage des entrées d'historique de plus de 2 ans pour libérer de l'espace
 - 🔢 **Conversion automatique** du montant en lettres (exigence légale)
-- ♿ **Accessible** : navigation clavier WAI-ARIA sur les onglets, modales avec focus trap
+- ♿ **Accessible** : navigation clavier WAI-ARIA sur les onglets, modales avec focus trap, contraste WCAG AAA sur le texte secondaire
 - 📱 **Responsive** : utilisable depuis un téléphone, une tablette ou un ordinateur
 - 📲 **Installable comme PWA** : ajoutable à l'écran d'accueil (mobile, desktop), fonctionne hors-ligne après la première visite
 
@@ -57,9 +62,11 @@ npm run test:watch    # vitest en mode watch
 
 ### Premier usage (dans l'app)
 
-1. Onglet **Patrimoine** : créez un bailleur (nom, adresse, ville, signature), puis ajoutez un ou plusieurs biens (libellé, adresse, type) rattachés à ce bailleur.
-2. Onglet **Locataires** : ajoutez vos locataires en choisissant le bien loué (loyer, charges, mode de règlement par défaut ; co-occupants si colocation).
-3. Onglet **Générer** : sélectionnez un bailleur puis un locataire, un mois, ajustez la période ou le mode de règlement si besoin, puis cliquez sur « Télécharger la quittance PDF ».
+1. Onglet **Patrimoine** : créez un bailleur (nom, adresse, ville, signature ; image de signature et logo optionnels), puis ajoutez un ou plusieurs biens (libellé, adresse, type) rattachés à ce bailleur.
+2. Onglet **Locataires** : ajoutez vos locataires en choisissant le bien loué (loyer, charges, mode de règlement par défaut, dépôt de garantie ; co-occupants si colocation).
+3. Onglet **Quittance** : sélectionnez un bailleur puis un locataire, un mois, ajustez la période ou le mode de règlement si besoin, puis cliquez sur « Télécharger la quittance PDF ».
+4. Onglet **Dépôt de garantie** (optionnel) : générez le reçu d'encaissement à la signature du bail, puis le reçu de restitution à la sortie (avec détail des retenues éventuelles en texte riche).
+5. Onglet **Configuration** (optionnel) : surveillez l'espace de stockage local, archivez l'historique ancien pour libérer de l'espace.
 
 ## Hébergement
 
@@ -87,7 +94,7 @@ Vos données vivent dans le `localStorage` de votre navigateur, qui peut être e
 - un nettoyage agressif des données de site
 - un changement de navigateur ou d'appareil
 
-**Utilisez régulièrement le bouton « Exporter les données »** (onglet Patrimoine). Cela télécharge un fichier JSON que vous pouvez sauvegarder sur votre cloud, votre disque dur, ou ailleurs. Le bouton « Importer les données » permet de restaurer ce fichier sur le même ou un autre navigateur.
+**Utilisez régulièrement le bouton « Exporter les données »** (onglet Configuration). Cela télécharge un fichier JSON que vous pouvez sauvegarder sur votre cloud, votre disque dur, ou ailleurs. Le bouton « Importer les données » permet de restaurer ce fichier sur le même ou un autre navigateur.
 
 ## Roadmap
 
@@ -97,7 +104,8 @@ Vue synthétique — voir [PRD.md](doc/PRD.md) pour le détail.
 - **v1.1** ✅ Historique des quittances émises, alerte anti-doublons, export XLSX.
 - **v1.2** ✅ Mode PWA : installable, fonctionne hors-ligne, prompt de mise à jour.
 - **v2.0** ✅ Multi-bailleurs / multi-biens, colocations (co-occupants), onglet Patrimoine, migration automatique depuis v1.x.
-- **v2.1** 🚧 Signature image et logo bailleur sur le PDF, reçu de dépôt de garantie, contraste renforcé, détection localStorage saturé.
+- **v2.1** ✅ Signature image et logo bailleur sur le PDF, reçus de dépôt de garantie (entrée + restitution), onglet Configuration avec jauge de stockage + archivage, contraste WCAG AAA renforcé.
+- **v2.2** ✅ Modèles d'email personnalisables (3 documents × sujet/corps avec placeholders), bouton « préparer l'email » pour les reçus DG, simplification des retenues DG en texte brut (retrait de Tiptap et des fonts italiques, ~870 KiB en moins).
 
 ## Contribuer
 

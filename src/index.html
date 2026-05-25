@@ -59,7 +59,19 @@
         @click="switchTab('generate')"
         class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
         :class="activeTab === 'generate' && 'text-apple-blue !border-apple-blue'">
-        Générer
+        Quittance
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'depot-garantie'"
+        :tabindex="activeTab === 'depot-garantie' ? 0 : -1"
+        id="tab-depot-garantie"
+        aria-controls="panel-depot-garantie"
+        @click="switchTab('depot-garantie')"
+        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
+        :class="activeTab === 'depot-garantie' && 'text-apple-blue !border-apple-blue'">
+        Dépôt de garantie
       </button>
       <button
         type="button"
@@ -96,6 +108,18 @@
         class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
         :class="activeTab === 'patrimoine' && 'text-apple-blue !border-apple-blue'">
         Patrimoine
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="activeTab === 'configuration'"
+        :tabindex="activeTab === 'configuration' ? 0 : -1"
+        id="tab-configuration"
+        aria-controls="panel-configuration"
+        @click="switchTab('configuration')"
+        class="-mb-0.5 flex-shrink-0 cursor-pointer whitespace-nowrap border-b-2 border-transparent bg-transparent px-3 py-3 text-sm text-apple-muted transition-colors sm:px-5 sm:text-base"
+        :class="activeTab === 'configuration' && 'text-apple-blue !border-apple-blue'">
+        Configuration
       </button>
     </div>
 
@@ -264,6 +288,107 @@
       </div>
     </section>
 
+    <!-- Panel : Dépôt de garantie -->
+    <section
+      id="panel-depot-garantie"
+      role="tabpanel"
+      aria-labelledby="tab-depot-garantie"
+      tabindex="-1"
+      x-show="activeTab === 'depot-garantie'">
+      <h2 class="mb-5 text-xl font-semibold sm:text-2xl">Dépôt de garantie</h2>
+
+      <template x-if="data.bailleurs.length === 0">
+        <div class="mb-5 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          ⚠️ Aucun bailleur configuré.
+          <button type="button" class="ml-2 underline" @click="switchTab('patrimoine')">Configurer un bailleur</button>
+        </div>
+      </template>
+
+      <div class="mb-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div>
+          <label for="dgSelectBailleur" class="field-label">Bailleur</label>
+          <select id="dgSelectBailleur" x-model="dgSelectedBailleurId" class="field-input">
+            <option value="">— Sélectionner un bailleur —</option>
+            <template x-for="b in data.bailleurs" :key="b.id">
+              <option :value="b.id" x-text="b.nom"></option>
+            </template>
+          </select>
+        </div>
+        <div>
+          <label for="dgSelectLocataire" class="field-label">Locataire</label>
+          <select
+            id="dgSelectLocataire"
+            x-model="dgSelectedLocataireId"
+            class="field-input"
+            :disabled="!dgSelectedBailleurId">
+            <option value="">— Sélectionner un locataire —</option>
+            <template x-for="loc in dgLocatairesDuBailleur" :key="loc.id">
+              <option :value="loc.id" x-text="loc.nom"></option>
+            </template>
+          </select>
+        </div>
+      </div>
+
+      <fieldset class="mb-5 rounded-lg border border-apple-border p-4">
+        <legend class="px-2 text-sm font-medium text-apple-text">Type de reçu</legend>
+        <div class="flex flex-col gap-2 sm:flex-row sm:gap-6">
+          <label class="inline-flex items-center gap-2">
+            <input type="radio" name="dgSousType" value="entree" x-model="dgSousType" />
+            <span>Reçu d'encaissement (entrée dans les lieux)</span>
+          </label>
+          <label class="inline-flex items-center gap-2">
+            <input type="radio" name="dgSousType" value="sortie" x-model="dgSousType" />
+            <span>Reçu de restitution (sortie)</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="mb-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div>
+          <label for="dgMontantInitial" class="field-label">Montant du dépôt de garantie (€)</label>
+          <input id="dgMontantInitial" type="number" min="0" step="0.01" x-model="dgMontantInitial" class="field-input" />
+          <div class="field-help">Pré-rempli depuis la fiche locataire si renseigné.</div>
+        </div>
+        <div>
+          <label for="dgDateEvenement" class="field-label">
+            <span x-show="dgSousType === 'entree'">Date d'encaissement</span>
+            <span x-show="dgSousType === 'sortie'">Date de restitution</span>
+          </label>
+          <input id="dgDateEvenement" type="date" x-model="dgDateEvenement" class="field-input" />
+        </div>
+      </div>
+
+      <div x-show="dgSousType === 'sortie'" class="mb-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div>
+          <label for="dgMontantRestitue" class="field-label">Montant restitué (€)</label>
+          <input id="dgMontantRestitue" type="number" min="0" step="0.01" x-model="dgMontantRestitue" class="field-input" />
+          <div class="field-help">
+            Retenue automatique :
+            <strong>
+              <span x-text="Math.max(0, (parseFloat(dgMontantInitial) || 0) - (parseFloat(dgMontantRestitue) || 0)).toFixed(2)"></span>&nbsp;€
+            </strong>
+          </div>
+        </div>
+      </div>
+
+      <div x-show="dgSousType === 'sortie'" class="mb-5">
+        <label for="dg-retenues" class="field-label">Détail des retenues (facultatif)</label>
+        <textarea
+          id="dg-retenues"
+          x-model="dgRetenuesTexte"
+          rows="5"
+          class="field-input min-h-[120px] resize-y"
+          placeholder="Ex : retenue de 80 € pour nettoyage, retenue de 150 € pour peinture..."
+        ></textarea>
+        <div class="field-help">Texte libre, multi-ligne. Les retours à la ligne sont préservés dans le PDF.</div>
+      </div>
+
+      <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <button type="button" class="btn flex-1" @click="generateRecuDG()">📥 Télécharger le reçu PDF</button>
+        <button type="button" class="btn btn-success flex-1" @click="generateRecuDGAndEmail()">📧 Télécharger et préparer l'email</button>
+      </div>
+    </section>
+
     <!-- Panel : Locataires -->
     <section
       id="panel-locataires"
@@ -329,11 +454,20 @@
       aria-labelledby="tab-historique"
       tabindex="-1"
       x-show="activeTab === 'historique'">
-      <h2 class="mb-5 text-xl font-semibold sm:text-2xl">Historique des quittances</h2>
+      <h2 class="mb-5 text-xl font-semibold sm:text-2xl">Historique des documents émis</h2>
 
       <!-- Barre filtres + actions -->
       <div class="card-section mb-4">
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div>
+            <label for="filterType" class="field-label">Type</label>
+            <select id="filterType" class="field-input" x-model="filterType">
+              <option value="">Tous</option>
+              <option value="quittance">Quittances</option>
+              <option value="recu_dg_entree">Reçus DG (entrée)</option>
+              <option value="recu_dg_sortie">Reçus DG (sortie)</option>
+            </select>
+          </div>
           <div>
             <label for="filterBailleurId" class="field-label">Bailleur</label>
             <select id="filterBailleurId" class="field-input" x-model="filterBailleurId">
@@ -371,7 +505,7 @@
             </select>
           </div>
         </div>
-        <div class="mt-3" x-show="filterLocataire || filterAnnee || filterBailleurId || filterBienLibelle">
+        <div class="mt-3" x-show="filterLocataire || filterAnnee || filterBailleurId || filterBienLibelle || filterType">
           <button type="button" class="btn btn-secondary btn-small" @click="resetFiltresHistorique()">✕ Réinitialiser les filtres</button>
         </div>
       </div>
@@ -410,7 +544,14 @@
         <template x-for="entry in filteredHistorique" :key="entry.id">
           <li class="flex flex-wrap items-start gap-x-4 gap-y-2 px-4 py-3 sm:items-center">
             <div class="min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-[220px]">
-              <div class="font-semibold text-apple-text break-words" x-text="entry.locataire?.nom || '(locataire inconnu)'"></div>
+              <div class="flex flex-wrap items-center gap-2">
+                <div class="font-semibold text-apple-text break-words" x-text="entry.locataire?.nom || '(locataire inconnu)'"></div>
+                <span
+                  x-show="isRecuDGEntry(entry)"
+                  class="inline-flex items-center rounded bg-apple-bg px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-apple-muted"
+                  x-text="labelTypeEntry(entry)"
+                ></span>
+              </div>
               <div class="mt-0.5 text-xs text-apple-muted" x-text="formatMoisEntry(entry)"></div>
               <div class="mt-0.5 text-xs font-mono text-apple-muted" x-show="entry.numeroQuittance" x-text="entry.numeroQuittance"></div>
             </div>
@@ -418,20 +559,49 @@
               <div x-show="entry.bailleur?.nom">🧑‍💼 <span x-text="entry.bailleur.nom"></span></div>
               <div x-show="entry.bien?.libelle">🏠 <span x-text="entry.bien.libelle"></span></div>
             </div>
-            <div class="min-w-0 flex-1 basis-full text-sm text-apple-muted sm:basis-auto">
-              <span aria-hidden="true">📅</span> <span x-text="formatPeriodeAffichee(entry)"></span>
-            </div>
-            <div class="whitespace-nowrap text-sm tabular-nums text-apple-text">
-              <span x-text="parseFloat(entry.loyer).toFixed(2)"></span>&nbsp;€
-              + <span x-text="parseFloat(entry.charges).toFixed(2)"></span>&nbsp;€
-              = <strong x-text="(parseFloat(entry.loyer) + parseFloat(entry.charges)).toFixed(2)"></strong>&nbsp;€
-            </div>
-            <div class="whitespace-nowrap text-sm text-apple-muted" x-show="entry.modeReglement">
-              <span aria-hidden="true">💳</span> <span x-text="entry.modeReglement"></span>
-            </div>
-            <div class="whitespace-nowrap text-xs text-apple-muted" x-show="entry.dateEncaissement">
-              <span aria-hidden="true">📥</span> <span x-text="formatDateEncaissementEntry(entry)"></span>
-            </div>
+            <!-- Quittance -->
+            <template x-if="isQuittanceEntry(entry)">
+              <div class="contents">
+                <div class="min-w-0 flex-1 basis-full text-sm text-apple-muted sm:basis-auto">
+                  <span aria-hidden="true">📅</span> <span x-text="formatPeriodeAffichee(entry)"></span>
+                </div>
+                <div class="whitespace-nowrap text-sm tabular-nums text-apple-text">
+                  <span x-text="parseFloat(entry.loyer).toFixed(2)"></span>&nbsp;€
+                  + <span x-text="parseFloat(entry.charges).toFixed(2)"></span>&nbsp;€
+                  = <strong x-text="(parseFloat(entry.loyer) + parseFloat(entry.charges)).toFixed(2)"></strong>&nbsp;€
+                </div>
+                <div class="whitespace-nowrap text-sm text-apple-muted" x-show="entry.modeReglement">
+                  <span aria-hidden="true">💳</span> <span x-text="entry.modeReglement"></span>
+                </div>
+                <div class="whitespace-nowrap text-xs text-apple-muted" x-show="entry.dateEncaissement">
+                  <span aria-hidden="true">📥</span> <span x-text="formatDateEncaissementEntry(entry)"></span>
+                </div>
+              </div>
+            </template>
+            <!-- Reçu DG -->
+            <template x-if="isRecuDGEntry(entry)">
+              <div class="contents">
+                <div class="min-w-0 flex-1 basis-full text-sm text-apple-muted sm:basis-auto">
+                  <span aria-hidden="true">📅</span>
+                  <span x-show="entry.type === 'recu_dg_entree'">Encaissé</span>
+                  <span x-show="entry.type === 'recu_dg_sortie'">Restitué</span>
+                  le <span x-text="entry.dateEvenement ? new Date(entry.dateEvenement).toLocaleDateString('fr-FR') : ''"></span>
+                </div>
+                <div class="whitespace-nowrap text-sm tabular-nums text-apple-text">
+                  <template x-if="entry.type === 'recu_dg_entree'">
+                    <span>
+                      DG : <strong x-text="parseFloat(entry.montantInitial).toFixed(2)"></strong>&nbsp;€
+                    </span>
+                  </template>
+                  <template x-if="entry.type === 'recu_dg_sortie'">
+                    <span>
+                      Restitué : <strong x-text="parseFloat(entry.montantRestitue).toFixed(2)"></strong>&nbsp;€
+                      <span class="text-apple-muted">/ <span x-text="parseFloat(entry.montantInitial).toFixed(2)"></span>&nbsp;€</span>
+                    </span>
+                  </template>
+                </div>
+              </div>
+            </template>
             <div class="whitespace-nowrap text-xs text-apple-muted">
               <span aria-hidden="true">🕒</span> Générée le <span x-text="formatDateGeneration(entry.dateGeneration)"></span>
             </div>
@@ -524,14 +694,193 @@
           </li>
         </template>
       </ul>
+    </section>
 
-      <hr class="my-8 border-t border-apple-border" />
+    <!-- Panel : Configuration -->
+    <section
+      id="panel-configuration"
+      role="tabpanel"
+      aria-labelledby="tab-configuration"
+      tabindex="-1"
+      x-show="activeTab === 'configuration'">
+      <h2 class="mb-5 text-xl font-semibold sm:text-2xl">Configuration</h2>
 
-      <h3 class="mb-4 text-lg font-semibold">Sauvegarde des données</h3>
-      <div class="flex flex-wrap gap-2">
-        <button type="button" class="btn btn-secondary" @click="exportData()">📤 Exporter les données</button>
-        <button type="button" class="btn btn-secondary" @click="$refs.importFile.click()">📥 Importer les données</button>
-        <input type="file" x-ref="importFile" class="hidden" @change="importData($event)" accept=".json" />
+      <div class="card-section mb-5">
+        <h3 class="mb-2 text-lg font-semibold">Sauvegarde des données</h3>
+        <p class="mb-3 text-sm text-apple-muted">
+          Exportez régulièrement un fichier JSON de vos données pour pouvoir les restaurer sur un autre
+          navigateur ou après une réinitialisation. L'import remplace toutes les données actuelles.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="btn btn-secondary" @click="exportData()">📤 Exporter les données</button>
+          <button type="button" class="btn btn-secondary" @click="$refs.importFile.click()">📥 Importer les données</button>
+          <input type="file" x-ref="importFile" class="hidden" @change="importData($event)" accept=".json" />
+        </div>
+      </div>
+
+      <div class="card-section mb-5">
+        <h3 class="mb-2 text-lg font-semibold">Modèles d'email</h3>
+        <p class="mb-3 text-sm text-apple-muted">
+          Personnalisez le sujet et le corps des emails préparés lors d'un « Télécharger et préparer l'email ».
+          Les placeholders ci-dessous sont remplacés au moment de l'envoi.
+        </p>
+        <div class="mb-3 flex flex-wrap gap-2 text-xs text-apple-muted">
+          <template x-for="p in emailPlaceholders" :key="p.key">
+            <span class="rounded border border-apple-border bg-white px-2 py-0.5">
+              <code x-text="`{${p.key}}`"></code>
+              <span class="ml-1" x-text="`— ${p.label}`"></span>
+            </span>
+          </template>
+        </div>
+
+        <!-- Quittance -->
+        <details class="mb-3 rounded-lg border border-apple-border bg-white" open>
+          <summary class="cursor-pointer select-none px-3 py-2 font-medium">Quittance de loyer</summary>
+          <div class="space-y-3 border-t border-apple-border p-3">
+            <div>
+              <label for="tpl-q-subject" class="field-label">Sujet</label>
+              <input
+                id="tpl-q-subject"
+                type="text"
+                class="field-input"
+                x-model="data.settings.emailTemplates.quittanceSubject"
+                @input="persistTemplates()"
+              />
+            </div>
+            <div>
+              <label for="tpl-q-body" class="field-label">Corps</label>
+              <textarea
+                id="tpl-q-body"
+                rows="6"
+                class="field-input min-h-[140px] resize-y"
+                x-model="data.settings.emailTemplates.quittanceBody"
+                @input="persistTemplates()"
+              ></textarea>
+            </div>
+            <button type="button" class="btn btn-secondary btn-small" @click="resetEmailTemplate('quittanceSubject'); resetEmailTemplate('quittanceBody')">
+              ↺ Réinitialiser ce modèle
+            </button>
+          </div>
+        </details>
+
+        <!-- Reçu DG entrée -->
+        <details class="mb-3 rounded-lg border border-apple-border bg-white">
+          <summary class="cursor-pointer select-none px-3 py-2 font-medium">Reçu de dépôt de garantie (entrée)</summary>
+          <div class="space-y-3 border-t border-apple-border p-3">
+            <div>
+              <label for="tpl-dge-subject" class="field-label">Sujet</label>
+              <input
+                id="tpl-dge-subject"
+                type="text"
+                class="field-input"
+                x-model="data.settings.emailTemplates.dgEntreeSubject"
+                @input="persistTemplates()"
+              />
+            </div>
+            <div>
+              <label for="tpl-dge-body" class="field-label">Corps</label>
+              <textarea
+                id="tpl-dge-body"
+                rows="6"
+                class="field-input min-h-[140px] resize-y"
+                x-model="data.settings.emailTemplates.dgEntreeBody"
+                @input="persistTemplates()"
+              ></textarea>
+            </div>
+            <button type="button" class="btn btn-secondary btn-small" @click="resetEmailTemplate('dgEntreeSubject'); resetEmailTemplate('dgEntreeBody')">
+              ↺ Réinitialiser ce modèle
+            </button>
+          </div>
+        </details>
+
+        <!-- Reçu DG sortie -->
+        <details class="rounded-lg border border-apple-border bg-white">
+          <summary class="cursor-pointer select-none px-3 py-2 font-medium">Restitution du dépôt de garantie (sortie)</summary>
+          <div class="space-y-3 border-t border-apple-border p-3">
+            <div>
+              <label for="tpl-dgs-subject" class="field-label">Sujet</label>
+              <input
+                id="tpl-dgs-subject"
+                type="text"
+                class="field-input"
+                x-model="data.settings.emailTemplates.dgSortieSubject"
+                @input="persistTemplates()"
+              />
+            </div>
+            <div>
+              <label for="tpl-dgs-body" class="field-label">Corps</label>
+              <textarea
+                id="tpl-dgs-body"
+                rows="6"
+                class="field-input min-h-[140px] resize-y"
+                x-model="data.settings.emailTemplates.dgSortieBody"
+                @input="persistTemplates()"
+              ></textarea>
+            </div>
+            <button type="button" class="btn btn-secondary btn-small" @click="resetEmailTemplate('dgSortieSubject'); resetEmailTemplate('dgSortieBody')">
+              ↺ Réinitialiser ce modèle
+            </button>
+          </div>
+        </details>
+      </div>
+
+      <div class="card-section mb-5">
+        <h3 class="mb-2 text-lg font-semibold">Stockage local</h3>
+        <p class="mb-3 text-sm text-apple-muted">
+          Toutes vos données vivent dans le <code>localStorage</code> de ce navigateur (plafond ~5 Mo).
+          Au-delà, le navigateur refusera de sauvegarder — pensez à exporter et archiver l'historique ancien.
+        </p>
+
+        <!-- Jauge -->
+        <div class="mb-2 flex items-center justify-between gap-3 text-sm">
+          <span class="font-medium">Espace utilisé</span>
+          <span class="tabular-nums" x-text="`${formatBytes(storageInfo.bytes)} / ~5 Mo (${storageInfo.percent}%)`"></span>
+        </div>
+        <div class="mb-3 h-2 w-full overflow-hidden rounded-full bg-apple-bg">
+          <div
+            class="h-full rounded-full transition-all"
+            :class="{
+              'bg-apple-success': storageInfo.status === 'ok',
+              'bg-apple-warning': storageInfo.status === 'warning',
+              'bg-apple-danger': storageInfo.status === 'critical',
+            }"
+            :style="`width: ${Math.max(2, storageInfo.percent)}%`"
+            role="progressbar"
+            :aria-valuenow="storageInfo.percent"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-label="Espace de stockage utilisé"
+          ></div>
+        </div>
+
+        <template x-if="storageInfo.status === 'warning'">
+          <p class="mb-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+            ⚠️ L'espace de stockage est utilisé à plus de 70 %. Pensez à exporter vos données et à archiver les entrées d'historique anciennes.
+          </p>
+        </template>
+        <template x-if="storageInfo.status === 'critical'">
+          <p class="mb-3 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-900">
+            🚨 Stockage presque saturé (≥ 90 %). Exportez maintenant et archivez l'historique pour éviter une perte de données.
+          </p>
+        </template>
+
+        <button
+          type="button"
+          class="btn btn-secondary btn-small"
+          @click="archiveAncienHistorique(2)"
+          :disabled="countHistoriqueOlderThan(2) === 0">
+          🗄️ Archiver l'historique de plus de 2 ans
+          <span class="ml-1 text-apple-muted" x-text="`(${countHistoriqueOlderThan(2)})`"></span>
+        </button>
+      </div>
+
+      <div class="card-section mb-5">
+        <h3 class="mb-2 text-lg font-semibold">Signature et logo des documents</h3>
+        <p class="text-sm text-apple-muted">
+          La signature image, le logo et l'option d'affichage de la signature sont propres à chaque bailleur.
+          Modifiez-les depuis l'onglet <button type="button" class="underline" @click="switchTab('patrimoine')">Patrimoine</button>
+          en éditant la fiche du bailleur concerné.
+        </p>
       </div>
     </section>
 
@@ -590,9 +939,16 @@
             </template>
           </select>
         </div>
-        <div class="mb-4">
-          <label for="edit-referenceBail" class="field-label">Référence du bail (optionnel)</label>
-          <input type="text" id="edit-referenceBail" class="field-input" x-model="editingLocataire.form.referenceBail" />
+        <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label for="edit-referenceBail" class="field-label">Référence du bail (optionnel)</label>
+            <input type="text" id="edit-referenceBail" class="field-input" x-model="editingLocataire.form.referenceBail" />
+          </div>
+          <div>
+            <label for="edit-depotGarantie" class="field-label">Dépôt de garantie (€)</label>
+            <input type="number" id="edit-depotGarantie" min="0" step="0.01" class="field-input" x-model="editingLocataire.form.depotGarantie" />
+            <div class="field-help">Pré-rempli sur les reçus de DG (onglet Dépôt de garantie).</div>
+          </div>
         </div>
         <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button type="button" class="btn btn-secondary" @click="closeLocataireModal()">Annuler</button>
@@ -634,10 +990,71 @@
             <input type="text" id="edit-bailleur-ville" class="field-input" x-model="editingBailleur.form.ville" />
           </div>
           <div>
-            <label for="edit-bailleur-signature" class="field-label">Signature *</label>
+            <label for="edit-bailleur-signature" class="field-label">Nom du signataire *</label>
             <input type="text" id="edit-bailleur-signature" class="field-input" x-model="editingBailleur.form.signature" />
+            <div class="field-help">Affiché en texte si la signature image n'est pas chargée.</div>
           </div>
         </div>
+
+        <!-- Réglages signature et logo -->
+        <fieldset class="mb-4 rounded-lg border border-apple-border p-3">
+          <legend class="px-2 text-sm font-medium text-apple-text">Signature</legend>
+          <label class="mb-3 inline-flex items-center gap-2">
+            <input type="checkbox" x-model="editingBailleur.form.signatureActive" />
+            <span>Afficher la signature sur les documents</span>
+          </label>
+          <div x-show="editingBailleur.form.signatureActive" class="space-y-2">
+            <div class="text-sm">Image de signature (PNG ou JPEG, max 500 Ko)</div>
+            <div class="flex flex-wrap items-center gap-3">
+              <template x-if="editingBailleur.form.signatureImage">
+                <img
+                  :src="editingBailleur.form.signatureImage"
+                  alt="Aperçu signature"
+                  class="max-h-20 max-w-[180px] rounded border border-apple-border bg-white p-1"
+                />
+              </template>
+              <label class="btn btn-secondary btn-small cursor-pointer">
+                <span x-text="editingBailleur.form.signatureImage ? 'Remplacer' : 'Choisir une image'"></span>
+                <input type="file" accept="image/png,image/jpeg" class="hidden" @change="uploadSignatureImage($event)" />
+              </label>
+              <button
+                type="button"
+                x-show="editingBailleur.form.signatureImage"
+                class="btn btn-danger btn-small"
+                @click="removeSignatureImage()"
+              >Supprimer</button>
+            </div>
+            <div class="field-help">Sans image : la signature s'affiche en texte (champ ci-dessus).</div>
+          </div>
+          <div x-show="!editingBailleur.form.signatureActive" class="text-xs text-apple-muted">
+            Désactivé : seul le nom du signataire apparaît sur les documents, sans cadre signature.
+          </div>
+        </fieldset>
+
+        <fieldset class="mb-4 rounded-lg border border-apple-border p-3">
+          <legend class="px-2 text-sm font-medium text-apple-text">Logo (optionnel)</legend>
+          <div class="text-sm">PNG ou JPEG, max 500 Ko. Affiché en en-tête des PDF.</div>
+          <div class="mt-2 flex flex-wrap items-center gap-3">
+            <template x-if="editingBailleur.form.logo">
+              <img
+                :src="editingBailleur.form.logo"
+                alt="Aperçu logo"
+                class="max-h-16 max-w-[160px] rounded border border-apple-border bg-white p-1"
+              />
+            </template>
+            <label class="btn btn-secondary btn-small cursor-pointer">
+              <span x-text="editingBailleur.form.logo ? 'Remplacer' : 'Choisir une image'"></span>
+              <input type="file" accept="image/png,image/jpeg" class="hidden" @change="uploadLogo($event)" />
+            </label>
+            <button
+              type="button"
+              x-show="editingBailleur.form.logo"
+              class="btn btn-danger btn-small"
+              @click="removeLogo()"
+            >Supprimer</button>
+          </div>
+        </fieldset>
+
         <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label for="edit-bailleur-email" class="field-label">Email</label>

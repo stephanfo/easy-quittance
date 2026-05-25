@@ -24,6 +24,9 @@ const bailleurSchema = z.object({
   adresse: z.string().default(''),
   ville: z.string().default(''),
   signature: z.string().default(''),
+  signatureActive: z.boolean().default(true),
+  signatureImage: z.string().default(''),
+  logo: z.string().default(''),
   email: z.string().default(''),
   telephone: z.string().default(''),
 });
@@ -47,6 +50,7 @@ const locataireSchema = z.object({
   modeReglement: z.string().default(''),
   referenceBail: z.string().default(''),
   coOccupants: z.string().default(''),
+  depotGarantie: z.coerce.number().nonnegative().default(0),
 });
 
 const historiqueBailleurSnapshotSchema = z.object({
@@ -54,6 +58,7 @@ const historiqueBailleurSnapshotSchema = z.object({
   adresse: z.string().default(''),
   ville: z.string().default(''),
   signature: z.string().default(''),
+  signatureActive: z.boolean().default(true),
   email: z.string().default(''),
   telephone: z.string().default(''),
 });
@@ -73,13 +78,15 @@ const historiqueLocataireSnapshotSchema = z.object({
   modeReglement: z.string().default(''),
   referenceBail: z.string().default(''),
   coOccupants: z.string().default(''),
+  depotGarantie: z.coerce.number().default(0),
 });
 
 const historiqueEntrySchema = z.object({
   id: z.string(),
+  type: z.enum(['quittance', 'recu_dg_entree', 'recu_dg_sortie']).default('quittance'),
   numeroQuittance: z.string().default(''),
   dateGeneration: z.string(),
-  moisNum: z.string(),
+  moisNum: z.string().default(''),
   annee: z.string(),
   bailleurId: z.string(),
   bailleur: historiqueBailleurSnapshotSchema,
@@ -92,6 +99,38 @@ const historiqueEntrySchema = z.object({
   modeReglement: z.string().default(''),
   dateEncaissement: z.string().default(''),
   dateEmission: z.string().default(''),
+  // Champs reçus DG (vides pour les quittances)
+  montantInitial: z.coerce.number().default(0),
+  montantRestitue: z.coerce.number().default(0),
+  retenuesTexte: z.string().default(''),
+  dateEvenement: z.string().default(''),
+});
+
+// Templates d'email par défaut. Placeholders supportés : {locataire}, {mois}, {annee},
+// {bailleur}, {signature}. Substitution simple via lib/email-template.js.
+export const DEFAULT_EMAIL_TEMPLATES = {
+  quittanceSubject: 'Quittance de loyer - {mois} {annee}',
+  quittanceBody:
+    'Bonjour,\n\nVeuillez trouver ci-joint la quittance de loyer pour le mois de {mois} {annee}.\n\nCordialement,\n{signature}',
+  dgEntreeSubject: 'Reçu de dépôt de garantie - {locataire}',
+  dgEntreeBody:
+    "Bonjour,\n\nVeuillez trouver ci-joint le reçu d'encaissement du dépôt de garantie.\n\nCordialement,\n{signature}",
+  dgSortieSubject: 'Restitution du dépôt de garantie - {locataire}',
+  dgSortieBody:
+    'Bonjour,\n\nVeuillez trouver ci-joint le reçu de restitution du dépôt de garantie.\n\nCordialement,\n{signature}',
+};
+
+const emailTemplatesSchema = z.object({
+  quittanceSubject: z.string().default(DEFAULT_EMAIL_TEMPLATES.quittanceSubject),
+  quittanceBody: z.string().default(DEFAULT_EMAIL_TEMPLATES.quittanceBody),
+  dgEntreeSubject: z.string().default(DEFAULT_EMAIL_TEMPLATES.dgEntreeSubject),
+  dgEntreeBody: z.string().default(DEFAULT_EMAIL_TEMPLATES.dgEntreeBody),
+  dgSortieSubject: z.string().default(DEFAULT_EMAIL_TEMPLATES.dgSortieSubject),
+  dgSortieBody: z.string().default(DEFAULT_EMAIL_TEMPLATES.dgSortieBody),
+});
+
+const settingsSchema = z.object({
+  emailTemplates: emailTemplatesSchema.default({}),
 });
 
 // Intégrité référentielle vérifiée à l'import : bien.bailleurId et locataire.bienId doivent pointer
@@ -99,11 +138,12 @@ const historiqueEntrySchema = z.object({
 // référencer un bailleur supprimé (c'est précisément le rôle de l'archive).
 export const dataSchema = z
   .object({
-    version: z.string().default('2.0'),
+    version: z.string().default('2.1'),
     bailleurs: z.array(bailleurSchema).default([]),
     biens: z.array(bienSchema).default([]),
     locataires: z.array(locataireSchema).default([]),
     historique: z.array(historiqueEntrySchema).default([]),
+    settings: settingsSchema.default({ emailTemplates: { ...DEFAULT_EMAIL_TEMPLATES } }),
   })
   .superRefine((data, ctx) => {
     const bailleurIds = new Set(data.bailleurs.map((b) => b.id));
@@ -130,11 +170,12 @@ export const dataSchema = z
 
 export function emptyData() {
   return {
-    version: '2.0',
+    version: '2.1',
     bailleurs: [],
     biens: [],
     locataires: [],
     historique: [],
+    settings: { emailTemplates: { ...DEFAULT_EMAIL_TEMPLATES } },
   };
 }
 
@@ -150,6 +191,10 @@ function normalizeBailleur(raw) {
     adresse: raw?.adresse || '',
     ville: raw?.ville || '',
     signature: raw?.signature || '',
+    // Défaut true : pour rétrocompat v2.0 (le comportement actuel = signature affichée).
+    signatureActive: typeof raw?.signatureActive === 'boolean' ? raw.signatureActive : true,
+    signatureImage: raw?.signatureImage || '',
+    logo: raw?.logo || '',
     email: raw?.email || '',
     telephone: raw?.telephone || '',
   };
@@ -177,12 +222,18 @@ function normalizeLocataire(raw) {
     modeReglement: raw?.modeReglement || '',
     referenceBail: raw?.referenceBail || '',
     coOccupants: raw?.coOccupants || '',
+    depotGarantie: Number(raw?.depotGarantie) || 0,
   };
 }
 
 function normalizeHistoriqueEntry(raw) {
+  const type =
+    raw?.type === 'recu_dg_entree' || raw?.type === 'recu_dg_sortie'
+      ? raw.type
+      : 'quittance';
   return {
     id: raw?.id || generateHistoriqueId(),
+    type,
     numeroQuittance: raw?.numeroQuittance || '',
     dateGeneration: raw?.dateGeneration || new Date().toISOString(),
     moisNum: raw?.moisNum != null ? String(raw.moisNum) : '',
@@ -193,6 +244,12 @@ function normalizeHistoriqueEntry(raw) {
       adresse: raw?.bailleur?.adresse || '',
       ville: raw?.bailleur?.ville || '',
       signature: raw?.bailleur?.signature || '',
+      // Rétrocompat : entrées v2.0 sans signatureActive → true (le PDF d'origine montrait
+      // la signature, on doit la rééditer à l'identique).
+      signatureActive:
+        typeof raw?.bailleur?.signatureActive === 'boolean'
+          ? raw.bailleur.signatureActive
+          : true,
       email: raw?.bailleur?.email || '',
       telephone: raw?.bailleur?.telephone || '',
     },
@@ -210,6 +267,7 @@ function normalizeHistoriqueEntry(raw) {
       modeReglement: raw?.locataire?.modeReglement || '',
       referenceBail: raw?.locataire?.referenceBail || '',
       coOccupants: raw?.locataire?.coOccupants || '',
+      depotGarantie: Number(raw?.locataire?.depotGarantie) || 0,
     },
     loyer: Number(raw?.loyer) || 0,
     charges: Number(raw?.charges) || 0,
@@ -218,17 +276,39 @@ function normalizeHistoriqueEntry(raw) {
     modeReglement: raw?.modeReglement || '',
     dateEncaissement: raw?.dateEncaissement || '',
     dateEmission: raw?.dateEmission || '',
+    montantInitial: Number(raw?.montantInitial) || 0,
+    montantRestitue: Number(raw?.montantRestitue) || 0,
+    // V2.2 : champ renommé en texte plat. On honore le nouveau nom ; les anciens snapshots
+    // avec retenuesHtml (HTML Tiptap) sont vidés volontairement (décision assumée :
+    // feature récente, volume faible, et le HTML brut serait illisible sur le PDF texte plat).
+    retenuesTexte: raw?.retenuesTexte || '',
+    dateEvenement: raw?.dateEvenement || '',
+  };
+}
+
+function normalizeSettings(raw) {
+  const tpl = raw?.emailTemplates || {};
+  return {
+    emailTemplates: {
+      quittanceSubject: tpl.quittanceSubject || DEFAULT_EMAIL_TEMPLATES.quittanceSubject,
+      quittanceBody: tpl.quittanceBody || DEFAULT_EMAIL_TEMPLATES.quittanceBody,
+      dgEntreeSubject: tpl.dgEntreeSubject || DEFAULT_EMAIL_TEMPLATES.dgEntreeSubject,
+      dgEntreeBody: tpl.dgEntreeBody || DEFAULT_EMAIL_TEMPLATES.dgEntreeBody,
+      dgSortieSubject: tpl.dgSortieSubject || DEFAULT_EMAIL_TEMPLATES.dgSortieSubject,
+      dgSortieBody: tpl.dgSortieBody || DEFAULT_EMAIL_TEMPLATES.dgSortieBody,
+    },
   };
 }
 
 export function migrate(raw) {
   if (!raw || typeof raw !== 'object') return emptyData();
   return {
-    version: '2.0',
+    version: '2.1',
     bailleurs: Array.isArray(raw.bailleurs) ? raw.bailleurs.map(normalizeBailleur) : [],
     biens: Array.isArray(raw.biens) ? raw.biens.map(normalizeBien) : [],
     locataires: Array.isArray(raw.locataires) ? raw.locataires.map(normalizeLocataire) : [],
     historique: Array.isArray(raw.historique) ? raw.historique.map(normalizeHistoriqueEntry) : [],
+    settings: normalizeSettings(raw.settings),
   };
 }
 

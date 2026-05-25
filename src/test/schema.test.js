@@ -1,14 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { parseImport, migrate, emptyData, dataSchema } from '../lib/schema.js';
+import {
+  parseImport,
+  migrate,
+  emptyData,
+  dataSchema,
+  DEFAULT_EMAIL_TEMPLATES,
+} from '../lib/schema.js';
 
 describe('emptyData', () => {
-  it('expose un squelette v2 vide', () => {
+  it('expose un squelette v2.1 vide avec settings par défaut', () => {
     expect(emptyData()).toEqual({
-      version: '2.0',
+      version: '2.1',
       bailleurs: [],
       biens: [],
       locataires: [],
       historique: [],
+      settings: { emailTemplates: { ...DEFAULT_EMAIL_TEMPLATES } },
     });
   });
 });
@@ -102,7 +109,7 @@ describe('migrate — historique', () => {
     expect(h.id).toMatch(/^h_/);
     expect(h.annee).toBe('2026'); // coercé en string
     expect(h.bailleurId).toBe('');
-    expect(h.bailleur).toEqual({ nom: '', adresse: '', ville: '', signature: '', email: '', telephone: '' });
+    expect(h.bailleur).toEqual({ nom: '', adresse: '', ville: '', signature: '', signatureActive: true, email: '', telephone: '' });
     expect(h.bien).toEqual({ libelle: '', adresse: '', type: '', reference: '' });
     expect(h.locataire.coOccupants).toBe('');
     expect(h.dateEmission).toBe(''); // défaut, sera substitué par aujourd'hui au render PDF
@@ -224,5 +231,141 @@ describe('dataSchema', () => {
         ],
       }),
     ).not.toThrow();
+  });
+});
+
+describe('migrate — rétrocompat V2.1', () => {
+  it('signatureActive défaut true si absent (bailleur sans champ)', () => {
+    const r = migrate({ bailleurs: [{ nom: 'B' }] });
+    expect(r.bailleurs[0].signatureActive).toBe(true);
+    expect(r.bailleurs[0].signatureImage).toBe('');
+    expect(r.bailleurs[0].logo).toBe('');
+  });
+
+  it('signatureActive=false est préservé', () => {
+    const r = migrate({ bailleurs: [{ nom: 'B', signatureActive: false }] });
+    expect(r.bailleurs[0].signatureActive).toBe(false);
+  });
+
+  it('depotGarantie défaut 0 sur le locataire', () => {
+    const r = migrate({ locataires: [{ nom: 'N', loyer: 500 }] });
+    expect(r.locataires[0].depotGarantie).toBe(0);
+  });
+
+  it("type d'entrée historique défaut 'quittance' (rétrocompat v2.0)", () => {
+    const r = migrate({
+      historique: [
+        {
+          id: 'h_1',
+          dateGeneration: '2026-05-17T10:00:00Z',
+          moisNum: '05',
+          annee: '2026',
+          bailleurId: 'ba_1',
+          bailleur: {},
+          bien: {},
+          locataire: { nom: 'A' },
+        },
+      ],
+    });
+    expect(r.historique[0].type).toBe('quittance');
+  });
+
+  it("préserve type recu_dg_entree et recu_dg_sortie", () => {
+    const r = migrate({
+      historique: [
+        { id: 'h_e', type: 'recu_dg_entree', dateGeneration: 'x', moisNum: '', annee: '2026', bailleur: {}, bien: {}, locataire: {} },
+        { id: 'h_s', type: 'recu_dg_sortie', dateGeneration: 'x', moisNum: '', annee: '2026', bailleur: {}, bien: {}, locataire: {} },
+      ],
+    });
+    expect(r.historique[0].type).toBe('recu_dg_entree');
+    expect(r.historique[1].type).toBe('recu_dg_sortie');
+  });
+
+  it('type inconnu retombe sur quittance', () => {
+    const r = migrate({
+      historique: [
+        { id: 'h_x', type: 'autre_chose', dateGeneration: 'x', moisNum: '05', annee: '2026', bailleur: {}, bien: {}, locataire: {} },
+      ],
+    });
+    expect(r.historique[0].type).toBe('quittance');
+  });
+
+  it('snapshot bailleur historique : signatureActive défaut true', () => {
+    const r = migrate({
+      historique: [
+        { id: 'h_1', dateGeneration: 'x', moisNum: '05', annee: '2026', bailleur: { nom: 'B' }, bien: {}, locataire: {} },
+      ],
+    });
+    expect(r.historique[0].bailleur.signatureActive).toBe(true);
+  });
+});
+
+describe('migrate — V2.2 (templates email + retenuesTexte)', () => {
+  it('settings.emailTemplates : défauts appliqués si absent du payload', () => {
+    const r = migrate({ bailleurs: [], biens: [], locataires: [] });
+    expect(r.settings.emailTemplates.quittanceSubject).toBe(DEFAULT_EMAIL_TEMPLATES.quittanceSubject);
+    expect(r.settings.emailTemplates.dgEntreeBody).toBe(DEFAULT_EMAIL_TEMPLATES.dgEntreeBody);
+  });
+
+  it('settings.emailTemplates : valeurs personnalisées préservées à l\'import', () => {
+    const r = migrate({
+      settings: {
+        emailTemplates: {
+          quittanceSubject: 'Mon sujet perso {mois}',
+          dgSortieBody: 'Mon corps perso',
+        },
+      },
+    });
+    expect(r.settings.emailTemplates.quittanceSubject).toBe('Mon sujet perso {mois}');
+    expect(r.settings.emailTemplates.dgSortieBody).toBe('Mon corps perso');
+    // Les autres clés non fournies prennent les défauts
+    expect(r.settings.emailTemplates.quittanceBody).toBe(DEFAULT_EMAIL_TEMPLATES.quittanceBody);
+    expect(r.settings.emailTemplates.dgEntreeSubject).toBe(DEFAULT_EMAIL_TEMPLATES.dgEntreeSubject);
+  });
+
+  it("settings absent → applique tous les défauts sans planter", () => {
+    const r = migrate({ historique: [] });
+    expect(r.settings).toBeDefined();
+    expect(r.settings.emailTemplates).toBeDefined();
+    expect(typeof r.settings.emailTemplates.quittanceBody).toBe('string');
+  });
+
+  it('historique : retenuesHtml ancien (V2.1) → vidé en retenuesTexte (décision assumée)', () => {
+    const r = migrate({
+      historique: [
+        {
+          id: 'h_dg',
+          type: 'recu_dg_sortie',
+          dateGeneration: 'x',
+          moisNum: '',
+          annee: '2026',
+          bailleur: {},
+          bien: {},
+          locataire: {},
+          retenuesHtml: '<p><strong>Ancien HTML</strong></p>',
+        },
+      ],
+    });
+    expect(r.historique[0].retenuesTexte).toBe('');
+    expect(r.historique[0].retenuesHtml).toBeUndefined();
+  });
+
+  it('historique : retenuesTexte (V2.2) préservé tel quel', () => {
+    const r = migrate({
+      historique: [
+        {
+          id: 'h_dg',
+          type: 'recu_dg_sortie',
+          dateGeneration: 'x',
+          moisNum: '',
+          annee: '2026',
+          bailleur: {},
+          bien: {},
+          locataire: {},
+          retenuesTexte: 'Peinture 200€\nNettoyage 50€',
+        },
+      ],
+    });
+    expect(r.historique[0].retenuesTexte).toBe('Peinture 200€\nNettoyage 50€');
   });
 });

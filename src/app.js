@@ -1,25 +1,37 @@
-import { loadData, saveData } from './lib/storage.js';
+import {
+  loadData,
+  saveData,
+  getStorageInfo,
+  buildArchivedCopy,
+  cutoffYearsAgo,
+} from './lib/storage.js';
 import {
   emptyData,
   parseImport,
   MODES_REGLEMENT,
   TYPES_BIEN,
+  DEFAULT_EMAIL_TEMPLATES,
   generateBailleurId,
   generateBienId,
   generateLocataireId,
 } from './lib/schema.js';
-import { buildPDF } from './lib/pdf.js';
+import { renderTemplate, AVAILABLE_PLACEHOLDERS } from './lib/email-template.js';
+import { buildPDF, buildRecuDGPDF } from './lib/pdf.js';
 import { defaultPeriod, formatPeriodFR } from './lib/period.js';
 import { moisTexte, formatDateFR } from './lib/format.js';
 import { toast, confirmDialog, choiceDialog } from './lib/toast.js';
 import {
   buildHistoriqueEntry,
+  buildHistoriqueRecuEntry,
   findDoublons,
+  findDoublonsRecu,
   filterAndSort,
   listeFiltreLocataires,
   listeFiltreAnnees,
   listeFiltreBiens,
   nextNumeroQuittance,
+  nextNumeroRecu,
+  resolveBailleurForRender,
 } from './lib/historique.js';
 
 const MOIS_OPTIONS = [
@@ -87,12 +99,23 @@ export function appData() {
     filterAnnee: '',
     filterBailleurId: '',
     filterBienLibelle: '',
+    filterType: '', // '' (tous), 'quittance', 'recu_dg_entree', 'recu_dg_sortie'
+
+    // État onglet Dépôt de garantie. Parallèle à la sélection Quittance mais indépendant
+    // (deux sélections autonomes pour ne pas mélanger les flux).
+    dgSelectedBailleurId: '',
+    dgSelectedLocataireId: '',
+    dgSousType: 'entree', // 'entree' | 'sortie'
+    dgMontantInitial: '',
+    dgMontantRestitue: '',
+    dgRetenuesTexte: '',
+    dgDateEvenement: '',
 
     // Indique si on a déjà averti l'utilisateur du fallback police (Inter indisponible).
     // Volontairement non persisté : un refresh remet à zéro.
     fontFallbackWarned: false,
 
-    tabsOrder: ['generate', 'historique', 'locataires', 'patrimoine'],
+    tabsOrder: ['generate', 'depot-garantie', 'historique', 'locataires', 'patrimoine', 'configuration'],
 
     // Indique que des données ont été modifiées depuis le dernier export.
     // Persiste en mémoire uniquement : un refresh remet à false (l'utilisateur a vécu le risque consciemment).
@@ -101,9 +124,25 @@ export function appData() {
     init() {
       this.data = loadData();
 
-      // Auto-sélection si un seul bailleur existe.
+      // Auto-sélection si un seul bailleur existe. Les assignations ici se font AVANT que les
+      // watchers soient enregistrés ci-dessous, donc la cascade locataire ne se déclencherait
+      // pas — on calcule directement l'auto-sélection initiale du locataire.
       if (this.data.bailleurs.length === 1) {
-        this.selectedBailleurId = this.data.bailleurs[0].id;
+        const bailleurId = this.data.bailleurs[0].id;
+        this.selectedBailleurId = bailleurId;
+        this.dgSelectedBailleurId = bailleurId;
+        const bienIds = new Set(
+          this.data.biens.filter((b) => b.bailleurId === bailleurId).map((b) => b.id),
+        );
+        const locs = this.data.locataires.filter((l) => bienIds.has(l.bienId));
+        if (locs.length === 1) {
+          this.selectedLocataireId = locs[0].id;
+          this.dgSelectedLocataireId = locs[0].id;
+          // Pré-remplit emailLocataire / modeReglement depuis la fiche (sinon les champs
+          // restent vides au premier render alors que le locataire est déjà sélectionné).
+          this.onSelectLocataire();
+          this.onDgSelectLocataire();
+        }
       }
 
       this.$watch('moisNum', () => this.syncPeriode());
@@ -112,8 +151,10 @@ export function appData() {
         if (!val) this.syncPeriode();
       });
       // Quand on change de bailleur, on réinitialise le locataire sélectionné.
+      // Confort : si le bailleur n'a qu'un seul locataire, on l'auto-sélectionne directement.
       this.$watch('selectedBailleurId', () => {
-        this.selectedLocataireId = '';
+        const locs = this.locatairesDuBailleur;
+        this.selectedLocataireId = locs.length === 1 ? locs[0].id : '';
         this.onSelectLocataire();
       });
       // Cascade des filtres historique : bailleur → bien → locataire.
@@ -131,6 +172,15 @@ export function appData() {
           this.filterLocataire = '';
         }
       });
+
+      // Onglet DG : cascade bailleur → locataire (identique à l'onglet quittance).
+      // Confort : auto-sélection si un seul locataire rattaché au bailleur.
+      // Le watcher sur dgSelectedLocataireId enchaînera onDgSelectLocataire().
+      this.$watch('dgSelectedBailleurId', () => {
+        const locs = this.dgLocatairesDuBailleur;
+        this.dgSelectedLocataireId = locs.length === 1 ? locs[0].id : '';
+      });
+      this.$watch('dgSelectedLocataireId', () => this.onDgSelectLocataire());
     },
 
     // ---------- Accesseurs ----------
@@ -181,6 +231,11 @@ export function appData() {
     },
 
     switchTab(name, { focusPanel = true } = {}) {
+      // Si on quitte Configuration alors qu'une frappe est en cours de debounce,
+      // on flush pour ne pas perdre l'édition de template en cas de close immédiat.
+      if (this.activeTab === 'configuration' && name !== 'configuration') {
+        this.flushPendingTemplates();
+      }
       this.activeTab = name;
       this.$nextTick(() => {
         if (!focusPanel) return;
@@ -200,6 +255,9 @@ export function appData() {
       else if (event.key === 'End') next = order[order.length - 1];
       if (!next) return;
       event.preventDefault();
+      if (this.activeTab === 'configuration' && next !== 'configuration') {
+        this.flushPendingTemplates();
+      }
       this.activeTab = next;
       this.$nextTick(() => {
         const tab = document.getElementById(`tab-${next}`);
@@ -230,9 +288,112 @@ export function appData() {
     },
 
     persist() {
-      if (!saveData(this.data)) {
+      const res = saveData(this.data);
+      if (res.ok) return;
+      if (res.quotaExceeded) {
+        // Le navigateur a refusé l'écriture : le payload courant en mémoire est plus gros
+        // que la dernière version persistée. On alerte fortement et on oriente vers l'onglet
+        // Configuration où l'utilisateur peut exporter + archiver.
+        toast(
+          'Stockage saturé : impossible de sauvegarder. Allez dans Configuration pour exporter et archiver.',
+          'error',
+          8000,
+        );
+      } else {
         toast('Erreur de sauvegarde locale', 'error');
       }
+    },
+
+    // ----- Storage : monitoring & archivage -----
+
+    get storageInfo() {
+      // Lecture explicite de `this.data` pour qu'Alpine track ce getter et le re-évalue
+      // après chaque mutation (sinon la jauge resterait figée jusqu'au prochain render).
+      // eslint-disable-next-line no-unused-expressions
+      this.data;
+      return getStorageInfo();
+    },
+
+    formatBytes(n) {
+      if (!n || n < 1024) return `${n || 0} o`;
+      const kb = n / 1024;
+      if (kb < 1024) return `${kb.toFixed(1)} Ko`;
+      return `${(kb / 1024).toFixed(2)} Mo`;
+    },
+
+    // Compte les entrées d'historique antérieures à `years` ans (utile pour le bouton d'archivage).
+    countHistoriqueOlderThan(years) {
+      const cutoff = cutoffYearsAgo(years);
+      return this.data.historique.filter((h) => (h?.dateGeneration || '') < cutoff).length;
+    },
+
+    // Archive (purge) les entrées d'historique antérieures à `years` ans après confirmation.
+    // L'utilisateur est invité à exporter d'abord — l'historique purgé est définitivement perdu
+    // côté localStorage (mais préservé dans le JSON exporté avant la purge).
+    async archiveAncienHistorique(years = 2) {
+      const cutoff = cutoffYearsAgo(years);
+      const n = this.countHistoriqueOlderThan(years);
+      if (n === 0) {
+        toast(`Aucune entrée antérieure à ${years} ans`, 'info');
+        return;
+      }
+      const ok = await confirmDialog({
+        title: 'Archiver l’historique ancien',
+        message:
+          `Supprimer ${n} entrée(s) d'historique antérieure(s) au ${formatDateFR(cutoff)} ? ` +
+          `Pensez à exporter vos données AVANT (bouton Exporter en bas) — la purge est définitive.`,
+        confirmLabel: 'Archiver',
+        danger: true,
+      });
+      if (!ok) return;
+      this.data = buildArchivedCopy(this.data, cutoff);
+      const saveRes = saveData(this.data);
+      if (!saveRes.ok) {
+        toast('Archivage effectué mais sauvegarde refusée. Exportez maintenant.', 'error', 8000);
+        return;
+      }
+      this.dirty = true;
+      toast(`${n} entrée(s) archivée(s)`, 'success');
+    },
+
+    // ----- Templates d'email -----
+
+    // Liste des placeholders supportés (réexposée pour l'UI Configuration).
+    emailPlaceholders: AVAILABLE_PLACEHOLDERS,
+
+    // Restaure une clé de template à sa valeur par défaut.
+    // Ex: resetEmailTemplate('quittanceSubject') → remet "Quittance de loyer - {mois} {annee}".
+    // On recrée l'objet emailTemplates entier (au lieu d'assigner par index) pour garantir
+    // la propagation Alpine vers les textareas bound par x-model.
+    resetEmailTemplate(key) {
+      if (!(key in DEFAULT_EMAIL_TEMPLATES)) return;
+      if (!this.data.settings) this.data.settings = { emailTemplates: {} };
+      this.data.settings.emailTemplates = {
+        ...this.data.settings.emailTemplates,
+        [key]: DEFAULT_EMAIL_TEMPLATES[key],
+      };
+      this.persistTemplates();
+    },
+
+    // Persistance debouncée pour les inputs de templates (évite un saveData() à chaque frappe).
+    // Le debounce simple ici se contente d'annuler le timer précédent au prochain appel.
+    _templatesTimer: null,
+    persistTemplates() {
+      clearTimeout(this._templatesTimer);
+      this._templatesTimer = setTimeout(() => {
+        this._templatesTimer = null;
+        this.persist();
+        this.dirty = true;
+      }, 400);
+    },
+    // Force le flush immédiat si un debounce est pending — appelé quand on quitte Configuration
+    // pour ne pas perdre une frappe récente si l'utilisateur ferme/recharge dans la fenêtre 400 ms.
+    flushPendingTemplates() {
+      if (!this._templatesTimer) return;
+      clearTimeout(this._templatesTimer);
+      this._templatesTimer = null;
+      this.persist();
+      this.dirty = true;
     },
 
     // ---------- CRUD bailleurs ----------
@@ -275,6 +436,55 @@ export function appData() {
       });
     },
 
+    // Lecture d'une image (PNG ou JPEG) depuis un <input type="file"> vers une dataURL base64.
+    // Limite : 500 Ko avant base64 — au-delà, on rejette (le localStorage est plafonné ~5 Mo
+    // et plusieurs bailleurs × image peuvent vite saturer). Renvoie la dataURL ou null si rejet.
+    async _readImageAsDataUrl(file) {
+      const MAX_BYTES = 500 * 1024;
+      if (!file) return null;
+      if (!/^image\/(png|jpeg|jpg)$/i.test(file.type)) {
+        toast('Format non supporté (PNG ou JPEG uniquement)', 'error');
+        return null;
+      }
+      if (file.size > MAX_BYTES) {
+        toast('Image trop volumineuse (max 500 Ko)', 'error', 5000);
+        return null;
+      }
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+        reader.onerror = () => {
+          toast("Impossible de lire l'image", 'error');
+          resolve(null);
+        };
+        reader.readAsDataURL(file);
+      });
+    },
+
+    async uploadSignatureImage(event) {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      const dataUrl = await this._readImageAsDataUrl(file);
+      if (!dataUrl) return;
+      this.editingBailleur.form.signatureImage = dataUrl;
+    },
+
+    removeSignatureImage() {
+      this.editingBailleur.form.signatureImage = '';
+    },
+
+    async uploadLogo(event) {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      const dataUrl = await this._readImageAsDataUrl(file);
+      if (!dataUrl) return;
+      this.editingBailleur.form.logo = dataUrl;
+    },
+
+    removeLogo() {
+      this.editingBailleur.form.logo = '';
+    },
+
     saveBailleur() {
       const f = this.editingBailleur.form;
       if (!f.nom?.trim() || !f.adresse?.trim() || !f.ville?.trim() || !f.signature?.trim()) {
@@ -286,6 +496,9 @@ export function appData() {
         adresse: f.adresse.trim(),
         ville: f.ville.trim(),
         signature: f.signature.trim(),
+        signatureActive: typeof f.signatureActive === 'boolean' ? f.signatureActive : true,
+        signatureImage: f.signatureImage || '',
+        logo: f.logo || '',
         email: (f.email || '').trim(),
         telephone: (f.telephone || '').trim(),
       };
@@ -326,6 +539,7 @@ export function appData() {
       this.data.biens = this.data.biens.filter((x) => x.bailleurId !== id);
       this.data.bailleurs = this.data.bailleurs.filter((x) => x.id !== id);
       if (this.selectedBailleurId === id) this.selectedBailleurId = '';
+      if (this.dgSelectedBailleurId === id) this.dgSelectedBailleurId = '';
       if (this.filterBailleurId === id) this.filterBailleurId = '';
       this.persist();
       this.dirty = true;
@@ -465,6 +679,7 @@ export function appData() {
           modeReglement: loc.modeReglement || '',
           referenceBail: loc.referenceBail || '',
           coOccupants: loc.coOccupants || '',
+          depotGarantie: loc.depotGarantie || 0,
         },
         previousActive: document.activeElement,
       };
@@ -501,6 +716,7 @@ export function appData() {
         modeReglement: f.modeReglement || '',
         referenceBail: (f.referenceBail || '').trim(),
         coOccupants: (f.coOccupants || '').trim(),
+        depotGarantie: parseFloat(f.depotGarantie) || 0,
       };
       if (this.editingLocataire.mode === 'create') {
         this.data.locataires.push({ id: generateLocataireId(), ...payload });
@@ -528,6 +744,7 @@ export function appData() {
       if (!ok) return;
       this.data.locataires = this.data.locataires.filter((l) => l.id !== id);
       if (this.selectedLocataireId === id) this.selectedLocataireId = '';
+      if (this.dgSelectedLocataireId === id) this.dgSelectedLocataireId = '';
       this.persist();
       this.dirty = true;
       toast('Locataire supprimé', 'success');
@@ -658,9 +875,36 @@ export function appData() {
     },
 
     // Reconstruit un PDF à partir d'un snapshot d'historique (réédition à l'identique, pas de push).
+    // Les images (signatureImage, logo) ne sont **pas** snapshottées : on les relit sur le bailleur
+    // courant via resolveBailleurForRender. Fallback gracieux si le bailleur a été supprimé.
     async _buildPDFFromEntry(entry) {
+      const visuel = resolveBailleurForRender(entry, this.data.bailleurs);
+      const bailleurRender = {
+        ...entry.bailleur,
+        signatureActive: visuel.signatureActive,
+        signatureImage: visuel.signatureImage,
+        logo: visuel.logo,
+      };
+      const isRecu = entry.type === 'recu_dg_entree' || entry.type === 'recu_dg_sortie';
+      if (isRecu) {
+        const sousType = entry.type === 'recu_dg_entree' ? 'entree' : 'sortie';
+        const { doc, filename, fontFallback } = await buildRecuDGPDF({
+          sousType,
+          bailleur: bailleurRender,
+          bien: entry.bien,
+          locataire: entry.locataire,
+          montantInitial: entry.montantInitial,
+          montantRestitue: entry.montantRestitue,
+          retenuesTexte: entry.retenuesTexte || '',
+          dateEvenement: entry.dateEvenement || '',
+          numeroRecu: entry.numeroQuittance || '',
+          dateEmission: entry.dateEmission || '',
+        });
+        this.notifyFontFallbackOnce(fontFallback);
+        return { doc, filename };
+      }
       const { doc, filename, fontFallback } = await buildPDF({
-        bailleur: entry.bailleur,
+        bailleur: bailleurRender,
         bien: entry.bien,
         locataire: entry.locataire,
         moisNum: entry.moisNum,
@@ -749,10 +993,250 @@ export function appData() {
       const loc = this.selectedLocataire;
       const dest = (this.emailLocataire || loc.email || '').trim();
       const label = moisTexte(this.moisNum, this.annee);
-      const sujet = `Quittance de loyer - ${label}`;
       // En réédition, on signe avec le bailleur du snapshot — l'email reste cohérent avec le PDF
       // joint, même si la fiche bailleur a changé entre-temps.
-      const corps = `Bonjour,\n\nVeuillez trouver ci-joint la quittance de loyer pour le mois de ${label}.\n\nCordialement,\n${built.bailleur.signature}`;
+      const vars = {
+        locataire: loc.nom || '',
+        mois: label,
+        annee: this.annee || '',
+        bailleur: built.bailleur.nom || '',
+        signature: built.bailleur.signature || '',
+      };
+      const tpl = this.data.settings?.emailTemplates || {};
+      const sujet = renderTemplate(tpl.quittanceSubject || DEFAULT_EMAIL_TEMPLATES.quittanceSubject, vars);
+      const corps = renderTemplate(tpl.quittanceBody || DEFAULT_EMAIL_TEMPLATES.quittanceBody, vars);
+      const mailto = `mailto:${dest}?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(corps)}`;
+      window.location.href = mailto;
+      toast("PDF téléchargé. Pensez à l'attacher à l'email.", 'info', 6000);
+    },
+
+    // ----- Dépôt de garantie -----
+
+    get dgSelectedBailleur() {
+      if (!this.dgSelectedBailleurId) return null;
+      return this.data.bailleurs.find((b) => b.id === this.dgSelectedBailleurId) || null;
+    },
+
+    get dgSelectedLocataire() {
+      if (!this.dgSelectedLocataireId) return null;
+      return this.data.locataires.find((l) => l.id === this.dgSelectedLocataireId) || null;
+    },
+
+    get dgSelectedBien() {
+      const loc = this.dgSelectedLocataire;
+      if (!loc) return null;
+      return this.data.biens.find((b) => b.id === loc.bienId) || null;
+    },
+
+    get dgLocatairesDuBailleur() {
+      const id = this.dgSelectedBailleurId;
+      if (!id) return [];
+      const bienIds = new Set(this.data.biens.filter((b) => b.bailleurId === id).map((b) => b.id));
+      return this.data.locataires.filter((l) => bienIds.has(l.bienId));
+    },
+
+    // Pré-remplit montant initial depuis la fiche locataire au changement de sélection.
+    // Reset aussi les champs transients (retenues texte, date événement) pour éviter de
+    // polluer le reçu du locataire suivant avec les saisies du précédent.
+    onDgSelectLocataire() {
+      this.dgRetenuesTexte = '';
+      this.dgDateEvenement = '';
+      const loc = this.dgSelectedLocataire;
+      if (!loc) {
+        this.dgMontantInitial = '';
+        this.dgMontantRestitue = '';
+        return;
+      }
+      const dg = Number(loc.depotGarantie) || 0;
+      this.dgMontantInitial = dg ? String(dg) : '';
+      this.dgMontantRestitue = dg ? String(dg) : '';
+    },
+
+    validateDGSelection() {
+      if (!this.dgSelectedBailleurId) {
+        toast('Sélectionnez un bailleur', 'warning');
+        return false;
+      }
+      if (!this.dgSelectedLocataireId) {
+        toast('Sélectionnez un locataire', 'warning');
+        return false;
+      }
+      const b = this.dgSelectedBailleur;
+      if (!b || !b.nom || !b.adresse || !b.ville || !b.signature) {
+        toast("Complétez la configuration du bailleur d'abord", 'warning');
+        this.switchTab('patrimoine');
+        return false;
+      }
+      if (!this.dgSelectedBien) {
+        toast('Bien introuvable pour ce locataire', 'error');
+        return false;
+      }
+      const mi = parseFloat(this.dgMontantInitial);
+      if (!(mi > 0)) {
+        toast('Renseignez le montant du dépôt de garantie', 'warning');
+        return false;
+      }
+      if (this.dgSousType === 'sortie') {
+        const mr = parseFloat(this.dgMontantRestitue);
+        if (Number.isNaN(mr) || mr < 0) {
+          toast('Renseignez le montant restitué', 'warning');
+          return false;
+        }
+        if (mr > mi) {
+          toast('Le montant restitué ne peut pas dépasser le dépôt initial', 'warning');
+          return false;
+        }
+      }
+      return true;
+    },
+
+    async _confirmDoublonRecuIfAny() {
+      const loc = this.dgSelectedLocataire;
+      const doublons = findDoublonsRecu(
+        this.data.historique,
+        this.dgSelectedBailleurId,
+        loc.nom,
+        this.dgSousType,
+      );
+      if (doublons.length === 0) return { action: 'new' };
+      const dernier = doublons.reduce((acc, h) => (h.dateGeneration > acc.dateGeneration ? h : acc));
+      const dateTxt = new Date(dernier.dateGeneration).toLocaleDateString('fr-FR');
+      const sousTypeLabel = this.dgSousType === 'entree' ? "d'encaissement" : 'de restitution';
+      const choice = await choiceDialog({
+        title: 'Reçu déjà émis',
+        message: `Un reçu de dépôt de garantie ${sousTypeLabel} pour ${loc.nom} a déjà été généré le ${dateTxt}${dernier.numeroQuittance ? ` (${dernier.numeroQuittance})` : ''}. Que souhaitez-vous faire ?`,
+        choices: [
+          { value: null, label: 'Annuler', variant: 'secondary' },
+          { value: 'new', label: '📄 Générer un nouveau', variant: 'secondary' },
+          { value: 'reissue', label: "🔁 Rééditer l'existant", variant: 'primary', autoFocus: true },
+        ],
+      });
+      if (choice === 'reissue') return { action: 'reissue', existing: dernier };
+      if (choice === 'new') return { action: 'new' };
+      return null;
+    },
+
+    // Pipeline commun aux deux flows DG (download seul / download + email). Renvoie
+    // { doc, filename, sousType, bailleur, locataire, reissued } ou null si annulé.
+    // - 'reissue' : régénère depuis le snapshot historique, pas de push.
+    // - 'new'     : génère un PDF neuf, push historique, persiste.
+    async _resolveAndBuildRecuDG() {
+      if (!this.validateDGSelection()) return null;
+      const decision = await this._confirmDoublonRecuIfAny();
+      if (!decision) return null;
+      const sousType = this.dgSousType;
+      if (decision.action === 'reissue') {
+        try {
+          const { doc, filename } = await this._buildPDFFromEntry(decision.existing);
+          return {
+            doc,
+            filename,
+            sousType: decision.existing.type === 'recu_dg_entree' ? 'entree' : 'sortie',
+            bailleur: decision.existing.bailleur,
+            locataire: decision.existing.locataire,
+            dateEvenement: decision.existing.dateEvenement || '',
+            reissued: true,
+          };
+        } catch (err) {
+          console.error(err);
+          toast('Impossible de rééditer ce reçu', 'error');
+          return null;
+        }
+      }
+
+      const bailleur = this.dgSelectedBailleur;
+      const bien = this.dgSelectedBien;
+      const loc = this.dgSelectedLocataire;
+      const dateEvenement = this.dgDateEvenement || new Date().toISOString().slice(0, 10);
+      const annee = dateEvenement.slice(0, 4);
+      const numero = nextNumeroRecu(this.data.historique, bailleur.id, annee, sousType);
+      const dateEmission = new Date().toISOString().slice(0, 10);
+      const montantInitial = parseFloat(this.dgMontantInitial) || 0;
+      const montantRestitue =
+        sousType === 'sortie' ? parseFloat(this.dgMontantRestitue) || 0 : 0;
+      const retenuesTexte = sousType === 'sortie' ? this.dgRetenuesTexte || '' : '';
+
+      try {
+        const { doc, filename, fontFallback } = await buildRecuDGPDF({
+          sousType,
+          bailleur,
+          bien,
+          locataire: loc,
+          montantInitial,
+          montantRestitue,
+          retenuesTexte,
+          dateEvenement,
+          numeroRecu: numero,
+          dateEmission,
+        });
+        this.notifyFontFallbackOnce(fontFallback);
+
+        // Push historique AVANT téléchargement (cohérent avec generateAndEmail/generatePDF).
+        this.data.historique.push(
+          buildHistoriqueRecuEntry({
+            sousType,
+            bailleur,
+            bien,
+            locataire: loc,
+            montantInitial,
+            montantRestitue,
+            retenuesTexte,
+            dateEvenement,
+            numeroRecu: numero,
+            dateEmission,
+          }),
+        );
+        this.persist();
+        this.dirty = true;
+        return { doc, filename, sousType, bailleur, locataire: loc, dateEvenement, reissued: false };
+      } catch (err) {
+        console.error(err);
+        toast('Erreur lors de la génération du reçu', 'error');
+        return null;
+      }
+    },
+
+    async generateRecuDG() {
+      const built = await this._resolveAndBuildRecuDG();
+      if (!built) return;
+      built.doc.save(built.filename);
+      const msg = built.reissued
+        ? 'Reçu réédité'
+        : built.sousType === 'entree'
+          ? 'Reçu DG téléchargé'
+          : 'Reçu de restitution téléchargé';
+      toast(msg, 'success');
+    },
+
+    async generateRecuDGAndEmail() {
+      const built = await this._resolveAndBuildRecuDG();
+      if (!built) return;
+
+      const blob = built.doc.output('blob');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = built.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      const loc = built.locataire || {};
+      const dest = (loc.email || '').trim();
+      const tpl = this.data.settings?.emailTemplates || {};
+      // L'année du reçu DG = celle de l'événement (encaissement ou restitution), pas l'année
+      // courante : un reçu daté du passé doit afficher la bonne année dans l'email aussi.
+      const anneeEvt = (built.dateEvenement || '').slice(0, 4) || new Date().getFullYear().toString();
+      const vars = {
+        locataire: loc.nom || '',
+        mois: '',
+        annee: anneeEvt,
+        bailleur: built.bailleur?.nom || '',
+        signature: built.bailleur?.signature || '',
+      };
+      const subjectKey = built.sousType === 'entree' ? 'dgEntreeSubject' : 'dgSortieSubject';
+      const bodyKey = built.sousType === 'entree' ? 'dgEntreeBody' : 'dgSortieBody';
+      const sujet = renderTemplate(tpl[subjectKey] || DEFAULT_EMAIL_TEMPLATES[subjectKey], vars);
+      const corps = renderTemplate(tpl[bodyKey] || DEFAULT_EMAIL_TEMPLATES[bodyKey], vars);
       const mailto = `mailto:${dest}?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(corps)}`;
       window.location.href = mailto;
       toast("PDF téléchargé. Pensez à l'attacher à l'email.", 'info', 6000);
@@ -766,6 +1250,7 @@ export function appData() {
         annee: this.filterAnnee,
         bailleurId: this.filterBailleurId,
         bienLibelle: this.filterBienLibelle,
+        type: this.filterType,
       });
     },
 
@@ -800,6 +1285,7 @@ export function appData() {
       this.filterAnnee = '';
       this.filterBailleurId = '';
       this.filterBienLibelle = '';
+      this.filterType = '';
     },
 
     async regenererPDF(entry) {
@@ -817,10 +1303,22 @@ export function appData() {
       const idx = this.data.historique.findIndex((h) => h.id === id);
       if (idx === -1) return;
       const entry = this.data.historique[idx];
-      const label = `${entry.locataire?.nom || ''} – ${moisTexte(entry.moisNum, entry.annee)}`;
+      const nom = entry.locataire?.nom || '';
+      let label;
+      let docType;
+      if (entry.type === 'recu_dg_entree') {
+        label = `${nom} – Dépôt de garantie (entrée ${entry.annee || ''})`;
+        docType = 'reçu de dépôt de garantie';
+      } else if (entry.type === 'recu_dg_sortie') {
+        label = `${nom} – Restitution dépôt de garantie (${entry.annee || ''})`;
+        docType = 'reçu de restitution';
+      } else {
+        label = `${nom} – ${moisTexte(entry.moisNum, entry.annee)}`;
+        docType = 'quittance';
+      }
       const ok = await confirmDialog({
         title: "Supprimer l'entrée d'historique",
-        message: `Supprimer la trace de la quittance « ${label} » ? Le PDF déjà téléchargé/envoyé n'est pas affecté.`,
+        message: `Supprimer la trace du ${docType} « ${label} » ? Le PDF déjà téléchargé/envoyé n'est pas affecté.`,
         confirmLabel: 'Supprimer',
         danger: true,
       });
@@ -858,7 +1356,28 @@ export function appData() {
     },
 
     formatMoisEntry(entry) {
+      if (entry.type === 'recu_dg_entree') {
+        return `DG – Entrée${entry.annee ? ` ${entry.annee}` : ''}`;
+      }
+      if (entry.type === 'recu_dg_sortie') {
+        return `DG – Restitution${entry.annee ? ` ${entry.annee}` : ''}`;
+      }
       return moisTexte(entry.moisNum, entry.annee);
+    },
+
+    isQuittanceEntry(entry) {
+      const t = entry?.type || 'quittance';
+      return t === 'quittance';
+    },
+
+    isRecuDGEntry(entry) {
+      return entry?.type === 'recu_dg_entree' || entry?.type === 'recu_dg_sortie';
+    },
+
+    labelTypeEntry(entry) {
+      if (entry?.type === 'recu_dg_entree') return 'Reçu DG (entrée)';
+      if (entry?.type === 'recu_dg_sortie') return 'Reçu DG (sortie)';
+      return 'Quittance';
     },
 
     formatDateEncaissementEntry(entry) {
@@ -910,8 +1429,11 @@ export function appData() {
       });
       if (!ok) return;
       this.data = parsed;
-      this.selectedBailleurId = parsed.bailleurs.length === 1 ? parsed.bailleurs[0].id : '';
+      const soloId = parsed.bailleurs.length === 1 ? parsed.bailleurs[0].id : '';
+      this.selectedBailleurId = soloId;
       this.selectedLocataireId = '';
+      this.dgSelectedBailleurId = soloId;
+      this.dgSelectedLocataireId = '';
       this.persist();
       this.dirty = false;
       this.resetFiltresHistorique();
@@ -930,6 +1452,7 @@ function emptyLocataireForm() {
     modeReglement: '',
     referenceBail: '',
     coOccupants: '',
+    depotGarantie: 0,
   };
 }
 
@@ -939,6 +1462,9 @@ function emptyBailleurForm() {
     adresse: '',
     ville: '',
     signature: '',
+    signatureActive: true,
+    signatureImage: '',
+    logo: '',
     email: '',
     telephone: '',
   };

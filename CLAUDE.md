@@ -8,7 +8,7 @@ Générateur de quittances de loyer en PDF, **local-first** (aucune donnée ne s
 
 Deux documents complémentaires existent — **les lire avant tout changement non trivial** :
 - [README.md](README.md) — doc utilisateur, usage local, hébergement
-- [PRD.md](doc/PRD.md) — vision produit, roadmap (v2.0 livrée)
+- [PRD.md](doc/PRD.md) — vision produit, roadmap (v2.2 livrée)
 
 ## Architecture
 
@@ -26,11 +26,12 @@ src/
   style.css            # Tailwind + composants @layer (.btn, .field-input, …)
   assets/fonts/        # Inter-Regular.ttf, Inter-Bold.ttf (SIL OFL) — chargés en lazy via import.meta.url
   lib/
-    storage.js         # load/save localStorage avec try/catch
-    schema.js          # Schéma Zod + normalisation des imports (data + historique)
-    pdf.js             # Construction async du PDF (mise en page pro, police Inter, n° quittance)
-    historique.js      # Fonctions pures historique (buildEntry, findDoublons, filter/sort, listes filtres, nextNumeroQuittance)
+    storage.js         # load/save localStorage + monitoring quota (getStorageInfo, buildArchivedCopy, cutoffYearsAgo)
+    schema.js          # Schéma Zod v2.1 (data) + settings.emailTemplates + DEFAULT_EMAIL_TEMPLATES + normalisation des imports
+    pdf.js             # Construction async des PDF (quittance + reçus DG) — drawSignatureBox 3 modes, logo en-tête, retenues en texte plat (splitTextToSize)
+    historique.js      # Fonctions pures historique (buildEntry, buildRecuEntry, findDoublons[Recu], filter/sort, nextNumeroQuittance, nextNumeroRecu, resolveBailleurForRender)
     xlsx-export.js     # Export XLSX de l'historique (lazy-loaded via import dynamique)
+    email-template.js  # renderTemplate(str, vars) — substitution {placeholder} pour les emails personnalisables (mailto)
     pwa.js             # SW register (prompt mode), bannière d'install, toast de mise à jour
     nombre-en-lettres.js
     period.js          # 1er au dernier jour du mois, format FR
@@ -41,53 +42,83 @@ public/                # Assets statiques copiés tels quels par Vite : icônes 
 dist/                  # Sortie du build Vite (gitignoré, artefact de déploiement — inclut sw.js + manifest.webmanifest)
 ```
 
-### Modèle de données (v2.0)
+### Modèle de données (v2.1)
 
 Persistance dans `localStorage` sous la clé `quittances_data`. Hiérarchie **bailleurs → biens → locataires** (un locataire est rattaché à un bien, un bien à un bailleur) :
 
 ```js
 {
-  version: '2.0',
+  version: '2.1',
   bailleurs: [
-    { id, nom, adresse, ville, signature, email, telephone }
+    { id, nom, adresse, ville, signature, signatureActive, signatureImage, logo, email, telephone }
+    // signatureActive: bool (défaut true) — si false, seul `nom` apparaît sous le bloc signature
+    // signatureImage / logo: dataURL base64 (PNG/JPEG ≤ 500 Ko côté UI) ou ''
   ],
   biens: [
     { id, bailleurId, libelle, adresse, type, reference }
     // type ∈ TYPES_BIEN = ['appartement','maison','chambre','local','parking','autre']
   ],
   locataires: [
-    { id, bienId, nom, email, loyer, charges, modeReglement, referenceBail, coOccupants }
+    { id, bienId, nom, email, loyer, charges, modeReglement, referenceBail, coOccupants, depotGarantie }
     // coOccupants = texte libre (un nom par ligne, affiché sur la quittance pour colocations)
+    // depotGarantie = montant DG (prérempli sur les reçus DG, surchargeable à la génération)
   ],
   historique: [
     {
-      id, numeroQuittance, dateGeneration,  // n° de quittance (Q-YYYYMM-NNN)
-      moisNum, annee,                       // clé doublon
-      bailleurId,                           // référence pour filtrage (snapshot append-only ; les id peuvent disparaître si l'entité est supprimée)
-      bailleur: { ... },                    // snapshot complet (incl. email, telephone)
+      id,
+      type,                                 // 'quittance' (défaut, rétrocompat v2.0) | 'recu_dg_entree' | 'recu_dg_sortie'
+      numeroQuittance,                      // Q-YYYYMM-NNN (quittance) | DG-E-YYYY-NNN | DG-S-YYYY-NNN
+      dateGeneration, moisNum, annee,       // moisNum vide pour les reçus DG
+      bailleurId,                           // référence pour filtrage / lookup courant
+      bailleur: {
+        nom, adresse, ville, signature,
+        signatureActive,                    // snapshotté pour figer le rendu (toggle) au moment de l'émission
+        email, telephone,
+        // NB: signatureImage et logo NE SONT PAS snapshottés — relus sur le bailleur courant
+      },
       bien: { libelle, adresse, type, reference },
-      locataire: { nom, email, loyer, charges, modeReglement, referenceBail, coOccupants },
+      locataire: { nom, email, loyer, charges, modeReglement, referenceBail, coOccupants, depotGarantie },
+      // Champs spécifiques aux quittances
       loyer, charges,                       // montants effectifs (peuvent différer de la fiche)
       periodeDebut, periodeFin,
       modeReglement, dateEncaissement,
+      // Champs spécifiques aux reçus DG (0 / '' pour une quittance)
+      montantInitial, montantRestitue,
+      retenuesTexte,                        // Texte multiligne libre (V2.2 : ex-retenuesHtml, plus de markup)
+      dateEvenement,                        // date d'encaissement (entrée) ou de restitution (sortie)
       dateEmission                          // ISO YYYY-MM-DD ; rejouée à la réédition (PDF identique)
     }
-  ]
+  ],
+  // V2.2 : premier setting global (jusqu'ici tout était per-bailleur). Les défauts viennent
+  // de DEFAULT_EMAIL_TEMPLATES dans schema.js et sont restaurables via resetEmailTemplate(key).
+  settings: {
+    emailTemplates: {
+      quittanceSubject, quittanceBody,
+      dgEntreeSubject,  dgEntreeBody,
+      dgSortieSubject,  dgSortieBody,
+      // Placeholders supportés : {locataire}, {mois}, {annee}, {bailleur}, {signature}
+    }
+  }
 }
 ```
 
 - `loadData()` ([src/lib/storage.js](src/lib/storage.js)) appelle `migrate()` ([src/lib/schema.js](src/lib/schema.js)) — normalise les imports/charges en complétant les champs manquants avec leurs défauts. Pas de support de schéma antérieur (phase prototype). **Préserver ce point d'entrée** quand on évoluera vers de nouveaux formats.
 - L'import JSON utilisateur passe par `parseImport()` → `migrate()` puis validation Zod stricte (`dataSchema.parse`). Un import malformé est rejeté avec un toast d'erreur.
-- **Historique = snapshot complet** : permet de regénérer le PDF à l'identique même si la fiche locataire/bien/bailleur évolue ou est supprimée. Ne jamais relire la fiche courante depuis une entrée d'historique.
+- **Snapshot historique allégé** (v2.1) : on capture les champs texte du bailleur (nom, adresse, signature, `signatureActive`) mais **pas** les images base64 (signature image, logo) pour ne pas saturer le localStorage. La réédition relit les images sur le bailleur courant via `resolveBailleurForRender(entry, bailleursCourants)` ([src/lib/historique.js](src/lib/historique.js)). **Conséquence** : si l'utilisateur change son image de signature, les PDF historiques regénérés afficheront la **dernière** image (compromis assumé). Si le bailleur a été supprimé, fallback gracieux sur le snapshot texte (`signatureActive` du snapshot, pas d'image).
 - **Suppression en cascade** : supprimer un bailleur supprime ses biens et leurs locataires (avec confirmation indiquant le nombre d'entités impactées). L'historique est **toujours conservé** (journal légal).
 
 ### Flux principaux
 
-- **Alpine.data('app', appData)** ([src/app.js](src/app.js)) — single source of truth réactive. Toute mutation persiste via `persist()` (≡ `saveData(this.data)`).
-- **Onglets** : `Générer · Historique · Locataires · Patrimoine` (ordre persisté dans `tabsOrder` côté Alpine pour la navigation clavier ←/→/Home/End). L'onglet Patrimoine regroupe bailleurs + biens et accueille aussi les boutons export/import.
+- **Alpine.data('app', appData)** ([src/app.js](src/app.js)) — single source of truth réactive. Toute mutation persiste via `persist()` qui appelle `saveData(this.data)` ; en cas de `QuotaExceededError` (localStorage saturé), un toast d'erreur invite à se rendre dans Configuration pour exporter + archiver.
+- **Onglets** : `Quittance · Dépôt de garantie · Historique · Locataires · Patrimoine · Configuration` (ordre persisté dans `tabsOrder` côté Alpine pour la navigation clavier ←/→/Home/End ; l'id interne du premier onglet reste `'generate'` pour ne pas casser les IDs DOM existants, seul le **libellé** a changé). L'onglet Patrimoine regroupe bailleurs + biens. L'onglet Configuration centralise tout ce qui touche aux données globales : export/import JSON, jauge de stockage et archivage de l'historique ancien.
 - **CRUD locataire / bailleur / bien : modale unifiée** ([src/index.html](src/index.html), [src/app.js](src/app.js)). Une seule modale par entité gère création **et** édition via un champ `mode: 'create' | 'edit'`. État Alpine : `editingLocataire`, `editingBailleur`, `editingBien` (`{ open, mode, id, form, previousActive }`). Méthodes : `openCreateXxx()` / `openEditXxx(id)` pour ouvrir, `closeXxxModal()` pour fermer (restaure le focus précédent), `saveXxx()` valide + crée OU modifie selon le mode. Le titre et le label du bouton enregistrer s'adaptent via `x-text`. Pas de formulaire inline dans la page — chaque liste a un bouton « ➕ Ajouter » qui ouvre la modale en mode create.
-- **Sélection à la génération** : `selectedBailleurId` puis `selectedLocataireId` (en cascade : changer de bailleur réinitialise le locataire via `$watch`). Le bien est dérivé du locataire via son `bienId`. Auto-sélection si un seul bailleur existe (à l'init et après import).
-- **Génération PDF** : `buildPDF({ bailleur, bien, locataire, … })` ([src/lib/pdf.js](src/lib/pdf.js)) est **async** (charge la police Inter en lazy-load, mémoïsée). L'adresse du logement loué vient désormais de `bien.adresse`. Les `coOccupants` du locataire sont listés sous son nom dans le bloc LOCATAIRE. Tous les callers (`generatePDF`, `generateAndEmail`, `regenererPDF`, `buildAndReturn`) sont async. Fallback Helvetica silencieux si fetch Inter échoue.
+- **Upload images bailleur** : la modale bailleur expose un toggle `signatureActive` + deux uploads (signature image + logo). Méthodes `_readImageAsDataUrl(file)` (validation type PNG/JPEG + taille ≤ 500 Ko, lecture via FileReader→dataURL base64), `uploadSignatureImage(event)` / `uploadLogo(event)` / `removeSignatureImage()` / `removeLogo()`. Aperçu inline (`<img :src="...">`) directement depuis la dataURL.
+- **Sélection à la génération** : `selectedBailleurId` puis `selectedLocataireId` (en cascade : changer de bailleur réinitialise le locataire via `$watch`). Le bien est dérivé du locataire via son `bienId`. Auto-sélection si un seul bailleur existe (à l'init et après import). L'onglet Dépôt de garantie réplique le même schéma avec `dgSelectedBailleurId` / `dgSelectedLocataireId`.
+- **Génération PDF quittance** : `buildPDF({ bailleur, bien, locataire, … })` ([src/lib/pdf.js](src/lib/pdf.js)) est **async** (charge la police Inter en lazy-load, mémoïsée). L'adresse du logement loué vient de `bien.adresse`. Les `coOccupants` du locataire sont listés sous son nom dans le bloc LOCATAIRE. Tous les callers (`generatePDF`, `generateAndEmail`, `regenererPDF`, `buildAndReturn`) sont async. Fallback Helvetica silencieux si fetch Inter échoue. Le logo bailleur, s'il existe, est rendu en haut à gauche de l'en-tête (zone max 40×16mm, ratio préservé via `drawImageInBox`).
+- **Bloc signature PDF** : `drawSignatureBox(doc, font, x, y, { signatureActive, signatureImage, signature, nom })` a trois rendus distincts — (1) toggle off : seul `nom` apparaît, pas de cadre ; (2) image présente : image redimensionnée dans le cadre 70×28mm + nom en petit dessous ; (3) sans image : cadre + texte `signature` (comportement original).
+- **Génération PDF reçu DG** : `buildRecuDGPDF({ sousType, bailleur, bien, locataire, montantInitial, montantRestitue, retenuesTexte, dateEvenement, numeroRecu, dateEmission })` ([src/lib/pdf.js](src/lib/pdf.js)) génère un reçu d'encaissement (entrée) ou de restitution (sortie) avec une mise en page parallèle à la quittance. La sortie inclut un tableau récap (initial / retenues / restitué) et le détail libre des retenues rendu en texte brut multiligne via `doc.splitTextToSize(retenuesTexte, CONTENT_W)` puis `doc.text(lines, M.left, y)` — pattern identique à l'introduction de la quittance, retours à la ligne de l'utilisateur préservés.
+- **Numérotation reçus DG** : `nextNumeroRecu(historique, bailleurId, annee, sousType)` ([src/lib/historique.js](src/lib/historique.js)) au format `DG-E-YYYY-NNN` (entrée) ou `DG-S-YYYY-NNN` (sortie). **Séquence par (bailleur, année, sousType)** — pas par mois, l'événement n'est pas mensuel.
+- **Anti-doublon DG** : `findDoublonsRecu(historique, bailleurId, locataireNom, sousType)` — un seul reçu entrée + un seul reçu sortie par (bailleur, locataire) sont attendus. Le dialogue propose les mêmes 3 actions que pour les quittances (Rééditer / Générer un nouveau / Annuler).
 - **N° de quittance** : `nextNumeroQuittance(historique, bailleurId, moisNum, annee)` ([src/lib/historique.js](src/lib/historique.js)) calcule le prochain n° au format `Q-YYYYMM-NNN`. **Séquence par (bailleur, mois)** — chaque bailleur a sa propre numérotation comptable, indépendante. Stocké dans l'entrée d'historique (snapshot append-only — un trou dans la séquence reste un trou, on prend `max+1`).
 - **Période couverte** : auto (1er → dernier jour) via `defaultPeriod()`, surchargeable par l'utilisateur via deux champs date (case à cocher « Personnaliser la période »).
 - **Mode de règlement** : valeur par défaut stockée par locataire (`locataire.modeReglement`), surchargeable à la génération.
@@ -95,11 +126,14 @@ Persistance dans `localStorage` sous la clé `quittances_data`. Hiérarchie **ba
 - **Date d'émission** : calculée et stockée dans le snapshot historique au format ISO `YYYY-MM-DD` lors d'une génération neuve (`buildAndReturn` la fige en `new Date().toISOString().slice(0,10)`). Affichée en `DD/MM/YYYY` sur le PDF (« Émise le X » + « Fait à <ville>, le X »). Le snapshot la rejoue à l'identique en réédition — un PDF regénéré 6 mois plus tard porte la date du jour de l'émission originale, pas celle de la regen.
   - **Comportement actuel** : `dateEmission = aujourd'hui` quelle que soit la période. Conforme art. 21 (la quittance est datée du jour de remise).
   - **Hook latent pour back-dating automatique** : si on veut un jour qu'une quittance générée rétroactivement pour un mois passé porte la date de fin de période plutôt qu'aujourd'hui (ex : « Émise le 31/01/2021 » pour janvier 2021), il suffit de remplacer la ligne unique dans `buildAndReturn` ([src/app.js](src/app.js)) par `dateEmission = (this.periodeFin && this.periodeFin < today) ? this.periodeFin : today`. Toute la plomberie (snapshot, réédition à l'identique, propagation vers `buildPDF`) est déjà en place — pas de schéma ni de test à toucher. Décision **volontairement laissée hors scope** : le comportement « date du jour » reste légalement le plus défendable (on ne prédate pas un document juridique).
-- **Anti-doublon** : avant toute génération, `findDoublons()` ([src/lib/historique.js](src/lib/historique.js)) cherche une entrée existante pour `(bailleurId, locataire.nom, moisNum, annee)`. Le scope par bailleur est obligatoire — deux bailleurs peuvent avoir un locataire homonyme sans collision. Si un doublon est trouvé, `choiceDialog()` ([src/lib/toast.js](src/lib/toast.js)) propose trois actions : **Rééditer l'existante** (rejoue le PDF depuis le snapshot d'historique, aucune nouvelle entrée), **Générer une nouvelle** (push d'une entrée supplémentaire — journal append-only), **Annuler**. Le bouton « Regénérer » depuis l'onglet Historique correspond exactement à la première action.
+- **Anti-doublon quittance** : avant toute génération, `findDoublons()` ([src/lib/historique.js](src/lib/historique.js)) cherche une entrée existante pour `(bailleurId, locataire.nom, moisNum, annee)` **scopée aux types `quittance` uniquement** (les reçus DG ne déclenchent pas de faux positifs). Le scope par bailleur est obligatoire — deux bailleurs peuvent avoir un locataire homonyme sans collision. Si un doublon est trouvé, `choiceDialog()` ([src/lib/toast.js](src/lib/toast.js)) propose trois actions : **Rééditer l'existante** (rejoue le PDF depuis le snapshot d'historique, aucune nouvelle entrée), **Générer une nouvelle** (push d'une entrée supplémentaire — journal append-only), **Annuler**. Le bouton « Regénérer » depuis l'onglet Historique correspond exactement à la première action.
+- **Réédition unifiée** : `_buildPDFFromEntry(entry)` ([src/app.js](src/app.js)) lit `entry.type` pour router vers `buildPDF` ou `buildRecuDGPDF`. Avant le rendu, `resolveBailleurForRender` recompose `bailleurRender = { ...entry.bailleur, signatureActive, signatureImage, logo }` en mixant snapshot (texte) et bailleur courant (images).
 - **Validation en deux temps** ([src/app.js](src/app.js)) : `validateBaseSelection()` (bailleur + locataire + mois/année) gate l'entrée du flux et la détection de doublon ; `validateForNewGeneration()` (fiche bailleur complète, bien existant, période cohérente) n'est invoquée qu'avant une génération neuve. Ce découplage permet de rééditer un PDF archivé même si la fiche bailleur courante a été vidée depuis.
 - **Signature email** : en réédition, le corps du `mailto:` reprend la signature du **snapshot** (cohérent avec le PDF joint), pas celle de la fiche bailleur courante. En génération neuve, c'est la fiche courante qui est utilisée.
-- **Filtres historique** : `filterAndSort()` accepte `{ locataireNom, annee, bailleurId, bienLibelle }`. La barre de filtres dans l'onglet Historique expose les 4.
+- **Filtres historique** : `filterAndSort()` accepte `{ locataireNom, annee, bailleurId, bienLibelle, type }`. La barre de filtres dans l'onglet Historique expose les 5. Le rendu d'une entrée DG affiche un badge `Reçu DG (entrée/sortie)` et bascule sur un layout dédié (montants DG au lieu de loyer+charges, date d'événement au lieu de période).
 - **Export XLSX** : `lib/xlsx-export.js` est importé dynamiquement (`await import(...)`) au clic, pour ne pas alourdir le bundle initial.
+- **Templates email personnalisables** (V2.2) : sujet + corps du `mailto:` configurables dans l'onglet Configuration pour 3 types de documents (quittance, reçu DG entrée, reçu DG sortie). Stockés dans `data.settings.emailTemplates`. Substitution via `renderTemplate(str, vars)` ([src/lib/email-template.js](src/lib/email-template.js)) — placeholders `{locataire}`, `{mois}`, `{annee}`, `{bailleur}`, `{signature}` remplacés au moment de l'envoi. Bouton « Réinitialiser » par template restore les défauts via `resetEmailTemplate(key)`. Persistance debouncée (400 ms) via `persistTemplates()` pour éviter d'écrire dans le localStorage à chaque frappe. Les retenues du reçu DG sortie sont saisies dans un simple `<textarea>` (V2.2 : Tiptap retiré, plus de mise en forme — texte brut multi-ligne).
+- **Storage monitoring** ([src/lib/storage.js](src/lib/storage.js)) : `saveData(data)` retourne `{ ok, quotaExceeded }`. `getStorageInfo()` renvoie `{ bytes, quotaBytes, percent, status }` avec `status ∈ 'ok' | 'warning' (≥70 %) | 'critical' (≥90 %)`. L'onglet Configuration affiche une jauge réactive (le getter `storageInfo` lit `this.data` pour qu'Alpine re-track le getter à chaque mutation). Bouton `archiveAncienHistorique(years = 2)` qui retire les entrées dont `dateGeneration < cutoffYearsAgo(2)` après confirmation (incite à exporter d'abord). Quota plafonné à 5 Mo (constante `STORAGE_QUOTA_BYTES`).
 - **Toasts / dialogues** : `toast(msg, variant)`, `await confirmDialog({...})` (2 boutons) et `await choiceDialog({ choices: [{value, label, variant, autoFocus}] })` (N boutons, renvoie la valeur du bouton cliqué ou `null`) ([src/lib/toast.js](src/lib/toast.js)) remplacent tous les `alert()` / `confirm()`. `confirmDialog` est désormais un wrapper sur `choiceDialog`. **Convention d'ordre des `choices`** : du moins primaire au plus primaire (le conteneur a `flex-col-reverse` sur mobile et `justify-end` sur desktop, ce qui place le dernier item au bon endroit dans les deux layouts).
 - **Email** : `mailto:` ne supporte pas les pièces jointes — le PDF est téléchargé et l'utilisateur l'attache manuellement (toast d'avertissement explicite).
 - **PWA** : `vite-plugin-pwa` (mode `prompt`, `injectRegister: false`) génère `sw.js` + `manifest.webmanifest` au build. [src/lib/pwa.js](src/lib/pwa.js) gère l'enregistrement du SW (toast « Nouvelle version dispo · Recharger »), capture `beforeinstallprompt` et affiche une bannière d'install dismissible (flag `quittance_pwa_install_dismissed` dans `localStorage`). Précachage Workbox de tous les assets buildés ; SW désactivé en dev (`devOptions.enabled: false`).
@@ -111,7 +145,7 @@ npm install                   # première fois — si erreur de cache npm: ajout
 npm run dev                   # serveur Vite (http://localhost:5173) avec HMR
 npm run build                 # vite build → dist/
 npm run preview               # sert dist/ pour validation locale
-npm run test                  # vitest run (~80 tests sur fonctions pures)
+npm run test                  # vitest run (~130 tests sur fonctions pures, environnement node uniquement)
 npm run test:watch            # vitest en mode watch
 ```
 
