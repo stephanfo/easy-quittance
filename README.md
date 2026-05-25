@@ -38,8 +38,9 @@ C'est exactement ce que fait cet outil. Stockage `localStorage`, génération PD
 
 ## Démo
 
-<!-- TODO: ajouter l'URL de démo si vous en hébergez une -->
-*Pas de démo en ligne pour le moment — voir la section ci-dessous pour utiliser l'app en local.*
+🚀 **Essayez l'app en ligne : [stephanfo.github.io/easy-quittance](https://stephanfo.github.io/easy-quittance/)**
+
+L'app est hébergée sur GitHub Pages (déploiement automatique à chaque release). Chaque visiteur a son propre `localStorage` dans son navigateur — vos données restent chez vous, rien n'est partagé entre utilisateurs ni envoyé à un serveur.
 
 ## Utilisation
 
@@ -106,7 +107,7 @@ Vue synthétique — voir [PRD.md](doc/PRD.md) pour le détail.
 - **v2.0** ✅ Multi-bailleurs / multi-biens, colocations (co-occupants), onglet Patrimoine, migration automatique depuis v1.x.
 - **v2.1** ✅ Signature image et logo bailleur sur le PDF, reçus de dépôt de garantie (entrée + restitution), onglet Configuration avec jauge de stockage + archivage, contraste WCAG AAA renforcé.
 - **v2.2** ✅ Modèles d'email personnalisables (3 documents × sujet/corps avec placeholders), bouton « préparer l'email » pour les reçus DG, simplification des retenues DG en texte brut (retrait de Tiptap et des fonts italiques, ~870 KiB en moins).
-- **v2.3** ✅ Refonte mobile / PWA installable : header et CTA sticky, dark mode auto, safe-area iOS (encoche / home indicator), Web Share API pour partager les PDF, raccourcis manifest, lazy-load du module PDF (-75% sur le bundle initial), durée d'archivage configurable, aperçu temps réel des montants, focus rings WCAG + `prefers-reduced-motion`.
+- **v2.3** ✅ Refonte mobile / PWA installable : header et CTA sticky, dark mode auto, safe-area iOS (encoche / home indicator), raccourcis manifest, lazy-load du module PDF (-75% sur le bundle initial), durée d'archivage configurable, aperçu temps réel des montants, focus rings WCAG + `prefers-reduced-motion`.
 
 ## Contribuer
 

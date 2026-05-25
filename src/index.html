@@ -205,49 +205,6 @@
         </div>
       </div>
 
-      <!-- Aperçu de la quittance en cours (bien + période + montants effectifs) -->
-      <div class="card-section mb-4" x-show="selectedLocataire">
-        <div class="mb-2 flex items-center gap-2">
-          <h3 class="text-sm font-semibold uppercase tracking-wide text-apple-muted">Aperçu de la quittance</h3>
-          <span
-            x-show="overrideMontants"
-            class="inline-flex items-center rounded bg-apple-warning/15 px-1.5 py-0.5 text-xs font-medium text-apple-warning">
-            Ajusté pour ce mois
-          </span>
-        </div>
-        <div class="text-sm" x-show="selectedBien">
-          <div class="font-medium" x-text="selectedBien?.libelle + (selectedBien?.type ? ' (' + selectedBien.type + ')' : '')"></div>
-          <div class="text-apple-muted whitespace-pre-line" x-text="selectedBien?.adresse"></div>
-          <div class="mt-1 text-xs text-apple-muted" x-show="selectedBien?.reference">Réf. <span x-text="selectedBien?.reference"></span></div>
-        </div>
-        <div class="mt-3 border-t border-apple-border pt-3 text-sm">
-          <div class="flex justify-between gap-3">
-            <span class="text-apple-muted">Période</span>
-            <span class="text-right" x-text="effectivePeriodeLabel || '—'"></span>
-          </div>
-          <div class="mt-2 flex justify-between gap-3 tabular-nums">
-            <span class="text-apple-muted">Loyer</span>
-            <span><span x-text="effectiveLoyer.toFixed(2)"></span>&nbsp;€</span>
-          </div>
-          <div class="mt-1 flex justify-between gap-3 tabular-nums">
-            <span class="text-apple-muted">Charges</span>
-            <span><span x-text="effectiveCharges.toFixed(2)"></span>&nbsp;€</span>
-          </div>
-          <div class="mt-2 flex justify-between gap-3 border-t border-apple-border pt-2 text-base font-semibold tabular-nums">
-            <span>Total mensuel</span>
-            <span><span x-text="(effectiveLoyer + effectiveCharges).toFixed(2)"></span>&nbsp;€</span>
-          </div>
-          <div class="mt-2 flex justify-between gap-3 text-xs text-apple-muted" x-show="modeReglement">
-            <span>Mode de règlement</span>
-            <span class="text-right" x-text="modeReglement"></span>
-          </div>
-          <div class="mt-1 flex justify-between gap-3 text-xs text-apple-muted" x-show="dateEncaissement">
-            <span>Date d'encaissement</span>
-            <span class="text-right" x-text="formatDateFR(dateEncaissement)"></span>
-          </div>
-        </div>
-      </div>
-
       <!-- Période couverte -->
       <div class="card-section mb-4">
         <h3 class="mb-3 text-lg font-semibold">Période couverte</h3>
@@ -320,14 +277,59 @@
         <label for="emailLocataire" class="field-label">Email du locataire (optionnel)</label>
         <input type="email" id="emailLocataire" placeholder="locataire@exemple.com" class="field-input" x-model="emailLocataire" />
         <div class="mt-3 rounded-lg bg-apple-bg p-4 text-sm text-apple-muted" x-show="emailLocataire.trim()">
-          ℹ️ Le PDF sera téléchargé ET un lien <code>mailto:</code> sera ouvert pour préparer l'email
-          (le PDF sera à attacher manuellement, <code>mailto:</code> ne supporte pas les pièces jointes).
+          ℹ️ <strong>Téléchargez d'abord le PDF</strong>, puis cliquez sur <em>Préparer l'email</em> :
+          un brouillon s'ouvrira dans votre client de messagerie. Attachez-y manuellement le PDF
+          déjà téléchargé (<code>mailto:</code> ne supporte pas les pièces jointes).
+        </div>
+      </div>
+
+      <!-- Aperçu final juste avant les boutons : récap de ce qui ira sur le PDF (bien +
+           période + montants effectifs override compris + mode/date d'encaissement) -->
+      <div class="card-section mb-4" x-show="selectedLocataire">
+        <div class="mb-2 flex items-center gap-2">
+          <h3 class="text-sm font-semibold uppercase tracking-wide text-apple-muted">Aperçu de la quittance</h3>
+          <span
+            x-show="overrideMontants"
+            class="inline-flex items-center rounded bg-apple-warning/15 px-1.5 py-0.5 text-xs font-medium text-apple-warning">
+            Ajusté pour ce mois
+          </span>
+        </div>
+        <div class="text-sm" x-show="selectedBien">
+          <div class="font-medium" x-text="selectedBien?.libelle + (selectedBien?.type ? ' (' + selectedBien.type + ')' : '')"></div>
+          <div class="text-apple-muted whitespace-pre-line" x-text="selectedBien?.adresse"></div>
+          <div class="mt-1 text-xs text-apple-muted" x-show="selectedBien?.reference">Réf. <span x-text="selectedBien?.reference"></span></div>
+        </div>
+        <div class="mt-3 border-t border-apple-border pt-3 text-sm">
+          <div class="flex justify-between gap-3">
+            <span class="text-apple-muted">Période</span>
+            <span class="text-right" x-text="effectivePeriodeLabel || '—'"></span>
+          </div>
+          <div class="mt-2 flex justify-between gap-3 tabular-nums">
+            <span class="text-apple-muted">Loyer</span>
+            <span><span x-text="effectiveLoyer.toFixed(2)"></span>&nbsp;€</span>
+          </div>
+          <div class="mt-1 flex justify-between gap-3 tabular-nums">
+            <span class="text-apple-muted">Charges</span>
+            <span><span x-text="effectiveCharges.toFixed(2)"></span>&nbsp;€</span>
+          </div>
+          <div class="mt-2 flex justify-between gap-3 border-t border-apple-border pt-2 text-base font-semibold tabular-nums">
+            <span>Total mensuel</span>
+            <span><span x-text="(effectiveLoyer + effectiveCharges).toFixed(2)"></span>&nbsp;€</span>
+          </div>
+          <div class="mt-2 flex justify-between gap-3 text-xs text-apple-muted" x-show="modeReglement">
+            <span>Mode de règlement</span>
+            <span class="text-right" x-text="modeReglement"></span>
+          </div>
+          <div class="mt-1 flex justify-between gap-3 text-xs text-apple-muted" x-show="dateEncaissement">
+            <span>Date d'encaissement</span>
+            <span class="text-right" x-text="formatDateFR(dateEncaissement)"></span>
+          </div>
         </div>
       </div>
 
       <div class="actions-cta">
-        <button type="button" class="btn flex-1" :disabled="_busy" @click="generatePDF()" x-text="_busy ? '⏳ Génération…' : '📥 Télécharger la quittance PDF'">📥 Télécharger la quittance PDF</button>
-        <button type="button" class="btn btn-success flex-1" :disabled="_busy" @click="generateAndEmail()" x-text="_busy ? '⏳ Génération…' : '📧 Télécharger et préparer l\'email'">📧 Télécharger et préparer l'email</button>
+        <button type="button" class="btn flex-1" :disabled="_busy" @click="generatePDF()" x-text="_busy ? '⏳ Génération…' : '📁 Télécharger la quittance'">📁 Télécharger la quittance</button>
+        <button type="button" class="btn btn-success flex-1" :disabled="_busy" @click="generateAndEmail()">📧 Préparer l'email</button>
       </div>
     </section>
 
@@ -463,8 +465,8 @@
       </div>
 
       <div class="actions-cta">
-        <button type="button" class="btn flex-1" :disabled="_busy" @click="generateRecuDG()" x-text="_busy ? '⏳ Génération…' : '📥 Télécharger le reçu PDF'">📥 Télécharger le reçu PDF</button>
-        <button type="button" class="btn btn-success flex-1" :disabled="_busy" @click="generateRecuDGAndEmail()" x-text="_busy ? '⏳ Génération…' : '📧 Télécharger et préparer l\'email'">📧 Télécharger et préparer l'email</button>
+        <button type="button" class="btn flex-1" :disabled="_busy" @click="generateRecuDG()" x-text="_busy ? '⏳ Génération…' : '📁 Télécharger le reçu'">📁 Télécharger le reçu</button>
+        <button type="button" class="btn btn-success flex-1" :disabled="_busy" @click="generateRecuDGAndEmail()">📧 Préparer l'email</button>
       </div>
     </section>
 
@@ -943,11 +945,11 @@
           </p>
         </template>
 
-        <div class="mb-3 flex flex-wrap items-center gap-2 text-sm">
-          <label for="archiveYears" class="text-apple-muted">Conserver l'historique pendant</label>
+        <div class="mb-3 flex flex-wrap items-center gap-3">
+          <label for="archiveYears" class="font-medium text-apple-text">Conserver l'historique pendant</label>
           <select
             id="archiveYears"
-            class="rounded-md border border-apple-border bg-white px-2 py-1 text-sm"
+            class="field-input min-w-[8rem] w-auto"
             x-model.number="data.settings.archiveYears"
             @change="persist(); dirty = true">
             <option :value="1">1 an</option>
@@ -962,7 +964,7 @@
           class="btn btn-secondary btn-small"
           @click="archiveAncienHistorique(data.settings.archiveYears)"
           :disabled="countHistoriqueOlderThan(data.settings.archiveYears) === 0">
-          🗄️ Archiver l'historique de plus de <span x-text="data.settings.archiveYears"></span> an<span x-show="data.settings.archiveYears > 1">s</span>
+          🗄️ Archiver l'historique de plus de <span x-text="data.settings.archiveYears > 1 ? data.settings.archiveYears + ' ans' : '1 an'"></span>
           <span class="ml-1 text-apple-muted" x-text="`(${countHistoriqueOlderThan(data.settings.archiveYears)})`"></span>
         </button>
       </div>
