@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatMontant, formatDateFR, moisTexte, moisNom } from '../lib/format.js';
+import { formatMontant, formatDateFR, moisTexte, moisNom, moisCapitalise } from '../lib/format.js';
 
 describe('formatMontant', () => {
   it('formate un nombre en FR avec virgule décimale', () => {
@@ -65,5 +65,18 @@ describe('moisTexte', () => {
 
   it('retourne "" si mois invalide', () => {
     expect(moisTexte('99', '2025')).toBe('');
+  });
+});
+
+describe('moisCapitalise', () => {
+  it('retourne le mois capitalisé sans année', () => {
+    expect(moisCapitalise('06')).toBe('Juin');
+    expect(moisCapitalise('01')).toBe('Janvier');
+    expect(moisCapitalise(12)).toBe('Décembre');
+  });
+
+  it('retourne "" si mois invalide', () => {
+    expect(moisCapitalise('99')).toBe('');
+    expect(moisCapitalise('')).toBe('');
   });
 });

@@ -25,7 +25,7 @@ function loadPdfModule() {
   return _pdfModulePromise;
 }
 import { defaultPeriod, formatPeriodFR } from './lib/period.js';
-import { moisTexte, formatDateFR } from './lib/format.js';
+import { moisTexte, moisCapitalise, formatDateFR } from './lib/format.js';
 import { toast, confirmDialog, choiceDialog } from './lib/toast.js';
 import { emptyLocataireForm, emptyBailleurForm, emptyBienForm } from './lib/forms.js';
 import { readImageAsDataUrl } from './lib/image-upload.js';
@@ -1150,10 +1150,9 @@ export function appData() {
       // On utilise le snapshot le plus récent (cohérent avec le PDF téléchargé en dernier).
       const dernier = doublons.reduce((acc, h) => (h.dateGeneration > acc.dateGeneration ? h : acc));
       const dest = (this.emailLocataire || loc.email || '').trim();
-      const label = moisTexte(this.moisNum, this.annee);
       const vars = {
         locataire: loc.nom || '',
-        mois: label,
+        mois: moisCapitalise(this.moisNum),
         annee: this.annee || '',
         bailleur: dernier.bailleur?.nom || '',
         signature: dernier.bailleur?.signature || '',
@@ -1413,7 +1412,7 @@ export function appData() {
       // année dans l'email aussi.
       const anneeEvt = (dernier.dateEvenement || '').slice(0, 4) || new Date().getFullYear().toString();
       const moisEvt = dernier.dateEvenement
-        ? moisTexte(dernier.dateEvenement.slice(5, 7), dernier.dateEvenement.slice(0, 4))
+        ? moisCapitalise(dernier.dateEvenement.slice(5, 7))
         : '';
       const vars = {
         locataire: loc.nom || '',

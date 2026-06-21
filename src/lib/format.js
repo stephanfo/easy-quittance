@@ -26,6 +26,13 @@ export function moisNom(moisNum) {
   return MOIS_NOMS[idx] || '';
 }
 
+// Nom du mois capitalisé, sans année (ex: "Juin"). Pour le placeholder {mois}
+// des templates email, où {annee} est un placeholder distinct.
+export function moisCapitalise(moisNum) {
+  const nom = moisNom(moisNum);
+  return nom ? `${nom.charAt(0).toUpperCase()}${nom.slice(1)}` : '';
+}
+
 export function moisTexte(moisNum, annee) {
   const nom = moisNom(moisNum);
   return nom ? `${nom.charAt(0).toUpperCase()}${nom.slice(1)} ${annee}` : '';
