@@ -17,14 +17,19 @@
 
   <!-- Bannière : modifications non exportées -->
   <div
-    x-show="dirty"
+    x-show="dirty || showBackupReminder"
     x-transition.opacity
     role="status"
     aria-live="polite"
     class="sticky top-[env(safe-area-inset-top)] z-50 mx-2 mb-3 flex max-w-5xl flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-md sm:mx-auto sm:top-5">
     <span class="min-w-0 flex-1">
       <span aria-hidden="true" class="mr-1">💾</span>
-      Modification sauvegardée dans le navigateur, mais pensez à exporter vos données pour ne rien perdre.
+      <span x-show="dirty">Modification sauvegardée dans le navigateur, mais pensez à exporter vos données pour ne rien perdre.</span>
+      <span
+        x-show="!dirty"
+        x-text="backupInfo.daysSince === null
+          ? 'Vous n’avez encore jamais exporté vos données. Le navigateur peut les effacer : exportez une sauvegarde.'
+          : `Dernier export il y a ${backupInfo.daysSince} jours. Le navigateur peut effacer vos données : exportez une sauvegarde.`"></span>
     </span>
     <div class="flex shrink-0 items-center gap-2">
       <button
@@ -35,7 +40,7 @@
       </button>
       <button
         type="button"
-        @click="dirty = false"
+        @click="dismissBackupBanner()"
         aria-label="Masquer la bannière"
         title="Masquer"
         class="rounded-md px-2 py-1.5 text-amber-900 hover:bg-amber-100">
@@ -797,6 +802,25 @@
           <button type="button" class="btn btn-secondary" @click="$refs.importFile.click()">📥 Importer les données</button>
           <input type="file" x-ref="importFile" class="hidden" @change="importData($event)" accept=".json" />
         </div>
+
+        <dl class="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+          <dt class="font-medium">Dernier export</dt>
+          <dd :class="backupInfo.stale ? 'text-amber-700' : 'text-apple-muted'" x-text="backupLabel"></dd>
+          <dt class="font-medium">Stockage persistant</dt>
+          <dd
+            class="text-apple-muted"
+            x-text="{ granted: 'Accordé : le navigateur ne purgera pas les données en cas de manque d’espace', denied: 'Non accordé par le navigateur', unsupported: 'Non pris en charge' }[persistentStorage]"></dd>
+          <dt class="font-medium">Mode</dt>
+          <dd class="text-apple-muted" x-text="standalone ? 'Application installée' : 'Onglet de navigateur'"></dd>
+        </dl>
+
+        <template x-if="safariPlatform && !standalone">
+          <p class="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+            ⚠️ Safari efface les données des sites non ouverts depuis 7 jours d’utilisation du navigateur.
+            Installez l’application pour les protéger :
+            <span x-text="safariInstallSteps[safariPlatform]"></span>
+          </p>
+        </template>
       </div>
 
       <div class="card-section mb-5">

@@ -4,7 +4,12 @@ import {
   getStorageInfo,
   buildArchivedCopy,
   cutoffYearsAgo,
+  loadLastExport,
+  saveLastExport,
+  backupStatus,
+  persistentStorageStatus,
 } from './lib/storage.js';
+import { isStandalone, safariInstallPlatform, SAFARI_INSTALL_STEPS } from './lib/pwa.js';
 import {
   emptyData,
   parseImport,
@@ -133,6 +138,21 @@ export function appData() {
     // Persiste en mémoire uniquement : un refresh remet à false (l'utilisateur a vécu le risque consciemment).
     dirty: false,
 
+    // Date ISO du dernier export JSON (clé localStorage dédiée). Pilote le rappel de sauvegarde.
+    lastExport: '',
+    // Masquage du rappel « pas d'export depuis N jours » pour la session en cours.
+    backupReminderDismissed: false,
+    // 'granted' | 'denied' | 'unsupported' — Storage API (navigator.storage.persist).
+    persistentStorage: 'unsupported',
+    _persistRequested: false,
+    // Contexte d'installation, figé au chargement (affiché dans Configuration).
+    standalone: isStandalone(),
+    safariPlatform:
+      typeof navigator !== 'undefined'
+        ? safariInstallPlatform(navigator.userAgent, navigator.maxTouchPoints)
+        : null,
+    safariInstallSteps: SAFARI_INSTALL_STEPS,
+
     // Lock anti double-clic sur les boutons de génération PDF. Empêche un 2e clic pendant
     // qu'un PDF est en cours de génération (race observable sur sticky CTA fixed iOS,
     // ou simplement quand la police Inter prend ~500 ms à charger).
@@ -140,6 +160,10 @@ export function appData() {
 
     init() {
       this.data = loadData();
+      this.lastExport = loadLastExport();
+      persistentStorageStatus().then((status) => {
+        this.persistentStorage = status;
+      });
 
       // Auto-sélection si un seul bailleur existe. Les assignations ici se font AVANT que les
       // watchers soient enregistrés ci-dessous, donc la cascade locataire ne se déclencherait
@@ -396,7 +420,10 @@ export function appData() {
 
     persist() {
       const res = saveData(this.data);
-      if (res.ok) return;
+      if (res.ok) {
+        this._requestPersistentStorage();
+        return;
+      }
       if (res.quotaExceeded) {
         // Le navigateur a refusé l'écriture : le payload courant en mémoire est plus gros
         // que la dernière version persistée. On alerte fortement et on oriente vers l'onglet
@@ -409,6 +436,38 @@ export function appData() {
       } else {
         toast('Erreur de sauvegarde locale', 'error');
       }
+    },
+
+    // Demande le stockage persistant une fois par session, à la première sauvegarde (donc
+    // juste après une action utilisateur : Firefox y affiche une demande de permission).
+    _requestPersistentStorage() {
+      if (this._persistRequested || this.persistentStorage !== 'denied') return;
+      this._persistRequested = true;
+      persistentStorageStatus({ request: true }).then((status) => {
+        this.persistentStorage = status;
+      });
+    },
+
+    get backupInfo() {
+      const d = this.data;
+      const hasData = d.bailleurs.length + d.locataires.length + d.historique.length > 0;
+      return backupStatus({ lastExport: this.lastExport, hasData });
+    },
+
+    get backupLabel() {
+      const { daysSince } = this.backupInfo;
+      if (daysSince === null) return 'Jamais';
+      if (daysSince === 0) return "Aujourd'hui";
+      return `Il y a ${daysSince} jour${daysSince > 1 ? 's' : ''} (${formatDateFR(this.lastExport.slice(0, 10))})`;
+    },
+
+    get showBackupReminder() {
+      return this.backupInfo.stale && !this.backupReminderDismissed;
+    },
+
+    dismissBackupBanner() {
+      this.dirty = false;
+      this.backupReminderDismissed = true;
     },
 
     // ----- Storage : monitoring & archivage -----
@@ -1594,6 +1653,8 @@ export function appData() {
       a.click();
       URL.revokeObjectURL(url);
       this.dirty = false;
+      this.lastExport = new Date().toISOString();
+      saveLastExport(this.lastExport);
       toast('Export téléchargé', 'success');
     },
 

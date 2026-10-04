@@ -5,7 +5,25 @@ export function shouldShowInstallBanner({ standalone, dismissed }) {
   return !standalone && !dismissed;
 }
 
-function isStandalone() {
+// Safari n'émet pas `beforeinstallprompt` : l'installation passe par un menu natif qu'on ne
+// peut qu'expliquer. Renvoie 'ios' (tout navigateur iOS/iPadOS, tous sur WebKit), 'macos'
+// (Safari desktop, « Ajouter au Dock » depuis Sonoma) ou null. iPadOS se déclare « Macintosh »
+// mais expose des points de contact tactiles.
+export function safariInstallPlatform(userAgent = '', maxTouchPoints = 0) {
+  const ua = String(userAgent);
+  if (/iPhone|iPad|iPod/.test(ua)) return 'ios';
+  const isMacSafari =
+    /Macintosh/.test(ua) && /Safari\//.test(ua) && !/Chrome|Chromium|Edg|OPR|Firefox/.test(ua);
+  if (!isMacSafari) return null;
+  return maxTouchPoints > 1 ? 'ios' : 'macos';
+}
+
+export const SAFARI_INSTALL_STEPS = {
+  ios: 'Bouton Partager, puis « Sur l’écran d’accueil ».',
+  macos: 'Menu Fichier, puis « Ajouter au Dock ».',
+};
+
+export function isStandalone() {
   if (typeof window === 'undefined') return false;
   if (window.matchMedia?.('(display-mode: standalone)').matches) return true;
   if (window.navigator.standalone === true) return true;
@@ -28,7 +46,7 @@ function markDismissed() {
   }
 }
 
-function buildInstallBanner({ onInstall, onDismiss }) {
+function buildInstallBanner({ onInstall, onDismiss, description, installLabel = 'Installer' }) {
   const root = document.createElement('div');
   root.id = 'pwa-install-banner';
   root.setAttribute('role', 'region');
@@ -43,7 +61,7 @@ function buildInstallBanner({ onInstall, onDismiss }) {
   const desc = document.createElement('p');
   desc.className = 'mb-3 text-sm text-apple-muted';
   desc.textContent =
-    "Ajoutez l'app à votre écran d'accueil pour un accès rapide et hors-ligne.";
+    description || "Ajoutez l'app à votre écran d'accueil pour un accès rapide et hors-ligne.";
 
   const actions = document.createElement('div');
   actions.className = 'flex justify-end gap-2';
@@ -59,7 +77,7 @@ function buildInstallBanner({ onInstall, onDismiss }) {
   installBtn.type = 'button';
   installBtn.className =
     'rounded-lg bg-apple-blue px-3 py-1.5 text-sm text-white hover:bg-apple-blue-hover';
-  installBtn.textContent = 'Installer';
+  installBtn.textContent = installLabel;
   installBtn.addEventListener('click', onInstall);
 
   actions.appendChild(laterBtn);
@@ -73,6 +91,26 @@ function buildInstallBanner({ onInstall, onDismiss }) {
 
 export function setupInstallPrompt() {
   if (typeof window === 'undefined') return;
+
+  const safari = safariInstallPlatform(navigator.userAgent, navigator.maxTouchPoints);
+  if (safari) {
+    if (!shouldShowInstallBanner({ standalone: isStandalone(), dismissed: isDismissed() })) return;
+    setTimeout(() => {
+      const root = buildInstallBanner({
+        description:
+          'Safari efface les données des sites non ouverts depuis 7 jours. Installez l’app pour les protéger : ' +
+          SAFARI_INSTALL_STEPS[safari],
+        installLabel: 'Compris',
+        onInstall: () => {
+          markDismissed();
+          root.remove();
+        },
+        onDismiss: () => root.remove(),
+      });
+      document.body.appendChild(root);
+    }, INSTALL_BANNER_DELAY_MS);
+    return;
+  }
 
   let deferredPrompt = null;
 

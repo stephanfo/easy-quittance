@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { buildArchivedCopy, cutoffYearsAgo, STORAGE_THRESHOLDS } from '../lib/storage.js';
+import {
+  buildArchivedCopy,
+  cutoffYearsAgo,
+  STORAGE_THRESHOLDS,
+  backupStatus,
+  BACKUP_REMINDER_DAYS,
+} from '../lib/storage.js';
 
 describe('cutoffYearsAgo', () => {
   it('retourne une date ISO N années avant le pivot fourni', () => {
@@ -65,5 +71,38 @@ describe('STORAGE_THRESHOLDS', () => {
     expect(STORAGE_THRESHOLDS.quotaBytes).toBe(5 * 1024 * 1024);
     expect(STORAGE_THRESHOLDS.warningRatio).toBeLessThan(STORAGE_THRESHOLDS.criticalRatio);
     expect(STORAGE_THRESHOLDS.criticalRatio).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('backupStatus', () => {
+  const today = new Date('2026-10-04T12:00:00Z');
+
+  it('jamais exporté + données → stale, daysSince null', () => {
+    expect(backupStatus({ lastExport: '', hasData: true, today })).toEqual({ daysSince: null, stale: true });
+  });
+
+  it('aucune donnée → jamais stale', () => {
+    expect(backupStatus({ lastExport: '', hasData: false, today }).stale).toBe(false);
+  });
+
+  it('export récent → pas stale', () => {
+    expect(backupStatus({ lastExport: '2026-09-30T08:00:00Z', hasData: true, today })).toEqual({
+      daysSince: 4,
+      stale: false,
+    });
+  });
+
+  it('stale à partir du seuil', () => {
+    expect(BACKUP_REMINDER_DAYS).toBe(30);
+    expect(backupStatus({ lastExport: '2026-09-04T12:00:00Z', hasData: true, today }).stale).toBe(true);
+    expect(backupStatus({ lastExport: '2026-09-05T12:00:00Z', hasData: true, today }).stale).toBe(false);
+  });
+
+  it('date invalide → traitée comme jamais exporté', () => {
+    expect(backupStatus({ lastExport: 'n/a', hasData: true, today })).toEqual({ daysSince: null, stale: true });
+  });
+
+  it('date future → daysSince 0', () => {
+    expect(backupStatus({ lastExport: '2027-01-01', hasData: true, today }).daysSince).toBe(0);
   });
 });
