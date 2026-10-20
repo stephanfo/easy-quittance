@@ -15,43 +15,42 @@
 </head>
 <body class="p-0 sm:p-5" x-data="app" x-cloak>
 
-  <!-- Bannière : modifications non exportées -->
-  <div
-    x-show="dirty || showBackupReminder"
-    x-transition.opacity
-    role="status"
-    aria-live="polite"
-    class="sticky top-[env(safe-area-inset-top)] z-50 mx-2 mb-3 flex max-w-5xl flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-md sm:mx-auto sm:top-5">
-    <span class="min-w-0 flex-1">
-      <span aria-hidden="true" class="mr-1">💾</span>
-      <span x-show="dirty">Modification sauvegardée dans le navigateur, mais pensez à exporter vos données pour ne rien perdre.</span>
-      <span
-        x-show="!dirty"
-        x-text="backupInfo.daysSince === null
-          ? 'Vous n’avez encore jamais exporté vos données. Le navigateur peut les effacer : exportez une sauvegarde.'
-          : `Dernier export il y a ${backupInfo.daysSince} jours. Le navigateur peut effacer vos données : exportez une sauvegarde.`"></span>
-    </span>
-    <div class="flex shrink-0 items-center gap-2">
-      <button
-        type="button"
-        @click="exportData()"
-        class="inline-flex items-center gap-1.5 rounded-md bg-amber-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-amber-800">
-        📤 Exporter
-      </button>
-      <button
-        type="button"
-        @click="dismissBackupBanner()"
-        aria-label="Masquer la bannière"
-        title="Masquer"
-        class="rounded-md px-2 py-1.5 text-amber-900 hover:bg-amber-100">
-        ✕
-      </button>
-    </div>
-  </div>
-
   <div class="container mx-auto max-w-5xl bg-white p-4 pt-0 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-xl sm:p-8 sm:pb-[max(2rem,env(safe-area-inset-bottom))] sm:shadow-md">
     <header class="app-header -mx-4 mb-6 bg-white px-4 pt-[max(1rem,env(safe-area-inset-top))] sm:-mx-8 sm:mb-6 sm:px-8 sm:pt-0">
-      <h1 class="mb-3 text-xl font-semibold sm:mb-5 sm:text-3xl">📄 Quittances & Dépôt de garantie</h1>
+      <div class="mb-3 flex items-start justify-between gap-2 sm:mb-5">
+        <h1 class="text-xl font-semibold sm:text-3xl">📄 Quittances & Dépôt de garantie</h1>
+        <button
+          type="button"
+          class="-m-1 shrink-0 rounded-md p-1 text-lg leading-none hover:bg-apple-bg sm:text-xl"
+          @click="openWelcome()"
+          aria-label="À propos de l’outil et de vos données"
+          title="À propos">ℹ️</button>
+      </div>
+
+      <!-- Rappel discret : données modifiées depuis le dernier export (ou jamais exportées) -->
+      <div
+        x-show="showBackupReminder"
+        role="status"
+        class="mb-3 flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-900 sm:text-sm">
+        <span class="min-w-0 flex-1">
+          <span aria-hidden="true">💾</span>
+          <span x-text="backupInfo.daysSince === null ? 'Données jamais exportées' : 'Modifications non exportées'"></span><span class="hidden sm:inline"> : le navigateur peut les effacer.</span>
+        </span>
+        <button
+          type="button"
+          @click="exportData()"
+          class="shrink-0 rounded px-2 py-1 font-medium underline underline-offset-2 hover:bg-amber-100">
+          Exporter
+        </button>
+        <button
+          type="button"
+          @click="dismissBackupReminder()"
+          aria-label="Masquer le rappel jusqu’à la prochaine visite"
+          title="Plus tard"
+          class="shrink-0 rounded px-1.5 py-1 hover:bg-amber-100">
+          ✕
+        </button>
+      </div>
 
       <!-- Tabs -->
       <div class="scrollbar-tabs -mx-2 flex gap-1 overflow-x-auto border-b-2 border-apple-border px-2 sm:gap-2" role="tablist" aria-label="Sections" @keydown="onTabsKey($event)">
@@ -805,7 +804,11 @@
 
         <dl class="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
           <dt class="font-medium">Dernier export</dt>
-          <dd :class="backupInfo.stale ? 'text-amber-700' : 'text-apple-muted'" x-text="backupLabel"></dd>
+          <dd :class="backupInfo.pending ? 'text-amber-700' : 'text-apple-muted'" x-text="backupLabel"></dd>
+          <dt class="font-medium">Dernière modification</dt>
+          <dd
+            class="text-apple-muted"
+            x-text="lastChangeLabel + (backupInfo.pending && backupInfo.daysSince !== null ? ' — non exportée' : '')"></dd>
           <dt class="font-medium">Stockage persistant</dt>
           <dd
             class="text-apple-muted"
@@ -975,7 +978,7 @@
             id="archiveYears"
             class="field-input min-w-[8rem] w-auto"
             x-model.number="data.settings.archiveYears"
-            @change="persist(); dirty = true">
+            @change="persist()">
             <option :value="1">1 an</option>
             <option :value="2">2 ans</option>
             <option :value="3">3 ans</option>
@@ -1004,6 +1007,41 @@
     </section>
 
     </main>
+
+    <!-- Écran d'accueil (première visite, puis bouton ℹ️ du header) -->
+    <div
+      x-show="welcome.open"
+      class="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="welcome-title"
+      @keydown.escape.window="welcome.open && closeWelcome()"
+      @click.self="closeWelcome()"
+      x-cloak>
+      <div class="my-4 w-full max-w-lg rounded-xl bg-white p-5 shadow-xl sm:my-12">
+        <div class="mb-4 flex items-center justify-between">
+          <h2 id="welcome-title" class="text-xl font-semibold">Bienvenue 👋</h2>
+          <button type="button" class="-m-2 inline-flex h-10 w-10 items-center justify-center bg-transparent text-3xl leading-none text-apple-muted hover:text-apple-text" @click="closeWelcome()" aria-label="Fermer">&times;</button>
+        </div>
+        <p class="mb-4 text-sm text-apple-text">
+          Cet outil génère vos quittances de loyer et vos reçus de dépôt de garantie en PDF, conformes à la loi.
+          Enregistrez une fois vos biens et vos locataires, puis produisez chaque document en quelques clics.
+        </p>
+        <p class="mb-3 rounded-md bg-apple-bg p-3 text-sm text-apple-text">
+          🔒 <strong>Vos données restent dans votre navigateur, rien n’est envoyé.</strong>
+          Pas de compte, pas de serveur, pas de suivi.
+        </p>
+        <p class="mb-5 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          💾 Revers de la médaille : un nettoyage du navigateur les efface. Exportez-les régulièrement avec le bouton
+          <strong>« 📤 Exporter les données »</strong> de l’onglet
+          <button type="button" class="font-medium underline" @click="closeWelcome(); switchTab('configuration')">Configuration</button>,
+          et gardez le fichier en lieu sûr. Une sauvegarde existante se restaure au même endroit (« Importer les données »).
+        </p>
+        <div class="flex justify-end">
+          <button type="button" id="welcome-start" class="btn" @click="closeWelcome()">C’est compris</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Modal locataire (création + édition) -->
     <div

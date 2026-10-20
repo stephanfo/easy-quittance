@@ -6,6 +6,10 @@ import {
   cutoffYearsAgo,
   loadLastExport,
   saveLastExport,
+  loadLastChange,
+  saveLastChange,
+  loadWelcomeSeen,
+  saveWelcomeSeen,
   backupStatus,
   persistentStorageStatus,
 } from './lib/storage.js';
@@ -134,14 +138,14 @@ export function appData() {
     // pensez à mettre à jour cette liste — sinon ←/→ devient incohérent avec l'ordre visuel.
     tabsOrder: ['generate', 'depot-garantie', 'historique', 'locataires', 'patrimoine', 'configuration'],
 
-    // Indique que des données ont été modifiées depuis le dernier export.
-    // Persiste en mémoire uniquement : un refresh remet à false (l'utilisateur a vécu le risque consciemment).
-    dirty: false,
-
-    // Date ISO du dernier export JSON (clé localStorage dédiée). Pilote le rappel de sauvegarde.
+    // Dates ISO du dernier export JSON et de la dernière sauvegarde de `data` (clés localStorage
+    // dédiées). Le rappel d'export s'affiche quand la seconde est postérieure à la première.
     lastExport: '',
-    // Masquage du rappel « pas d'export depuis N jours » pour la session en cours.
+    lastChange: '',
+    // Rappel d'export masqué (« Plus tard ») pour la session en cours.
     backupReminderDismissed: false,
+    // Écran d'accueil : ouvert d'office à la première visite, réaffichable via le bouton ℹ️ du header.
+    welcome: { open: false, previousActive: null },
     // 'granted' | 'denied' | 'unsupported' — Storage API (navigator.storage.persist).
     persistentStorage: 'unsupported',
     _persistRequested: false,
@@ -161,6 +165,8 @@ export function appData() {
     init() {
       this.data = loadData();
       this.lastExport = loadLastExport();
+      this.lastChange = loadLastChange();
+      if (!loadWelcomeSeen()) this.openWelcome();
       persistentStorageStatus().then((status) => {
         this.persistentStorage = status;
       });
@@ -421,6 +427,7 @@ export function appData() {
     persist() {
       const res = saveData(this.data);
       if (res.ok) {
+        this._markChanged();
         this._requestPersistentStorage();
         return;
       }
@@ -448,10 +455,16 @@ export function appData() {
       });
     },
 
+    // Toute sauvegarde réussie (patrimoine, historique, réglages, import) date la dernière modification.
+    _markChanged() {
+      this.lastChange = new Date().toISOString();
+      saveLastChange(this.lastChange);
+    },
+
     get backupInfo() {
       const d = this.data;
       const hasData = d.bailleurs.length + d.locataires.length + d.historique.length > 0;
-      return backupStatus({ lastExport: this.lastExport, hasData });
+      return backupStatus({ lastExport: this.lastExport, lastChange: this.lastChange, hasData });
     },
 
     get backupLabel() {
@@ -461,13 +474,34 @@ export function appData() {
       return `Il y a ${daysSince} jour${daysSince > 1 ? 's' : ''} (${formatDateFR(this.lastExport.slice(0, 10))})`;
     },
 
-    get showBackupReminder() {
-      return this.backupInfo.stale && !this.backupReminderDismissed;
+    get lastChangeLabel() {
+      return this.lastChange ? formatDateFR(this.lastChange.slice(0, 10)) : '—';
     },
 
-    dismissBackupBanner() {
-      this.dirty = false;
+    get showBackupReminder() {
+      return this.backupInfo.pending && !this.backupReminderDismissed;
+    },
+
+    dismissBackupReminder() {
       this.backupReminderDismissed = true;
+    },
+
+    // ----- Écran d'accueil -----
+
+    openWelcome() {
+      this.welcome = { open: true, previousActive: document.activeElement };
+      this.$nextTick(() => document.getElementById('welcome-start')?.focus());
+    },
+
+    closeWelcome() {
+      const prev = this.welcome.previousActive;
+      this.welcome.open = false;
+      saveWelcomeSeen();
+      // La bannière d'installation (pwa.js) attend la fermeture pour ne pas se superposer.
+      window.dispatchEvent(new Event('quittance:welcome-closed'));
+      this.$nextTick(() => {
+        if (prev && typeof prev.focus === 'function' && document.contains(prev)) prev.focus();
+      });
     },
 
     // ----- Storage : monitoring & archivage -----
@@ -518,7 +552,7 @@ export function appData() {
         toast('Archivage effectué mais sauvegarde refusée. Exportez maintenant.', 'error', 8000);
         return;
       }
-      this.dirty = true;
+      this._markChanged();
       toast(`${n} entrée(s) archivée(s)`, 'success');
     },
 
@@ -571,7 +605,6 @@ export function appData() {
       this._templatesTimer = setTimeout(() => {
         this._templatesTimer = null;
         this.persist();
-        this.dirty = true;
       }, 400);
     },
     // Force le flush immédiat si un debounce est pending — appelé quand on quitte Configuration
@@ -581,7 +614,6 @@ export function appData() {
       clearTimeout(this._templatesTimer);
       this._templatesTimer = null;
       this.persist();
-      this.dirty = true;
     },
 
     // ---------- CRUD bailleurs ----------
@@ -685,7 +717,6 @@ export function appData() {
         toast('Bailleur modifié', 'success');
       }
       this.persist();
-      this.dirty = true;
       this.closeBailleurModal();
     },
 
@@ -713,7 +744,6 @@ export function appData() {
       if (this.dgSelectedBailleurId === id) this.dgSelectedBailleurId = '';
       if (this.filterBailleurId === id) this.filterBailleurId = '';
       this.persist();
-      this.dirty = true;
       toast('Bailleur supprimé', 'success');
     },
 
@@ -788,7 +818,6 @@ export function appData() {
         toast('Bien modifié', 'success');
       }
       this.persist();
-      this.dirty = true;
       this.closeBienModal();
     },
 
@@ -810,7 +839,6 @@ export function appData() {
       this.data.locataires = this.data.locataires.filter((l) => l.bienId !== id);
       this.data.biens = this.data.biens.filter((b) => b.id !== id);
       this.persist();
-      this.dirty = true;
       toast('Bien supprimé', 'success');
     },
 
@@ -899,7 +927,6 @@ export function appData() {
         toast('Locataire modifié', 'success');
       }
       this.persist();
-      this.dirty = true;
       this.closeLocataireModal();
     },
 
@@ -917,7 +944,6 @@ export function appData() {
       if (this.selectedLocataireId === id) this.selectedLocataireId = '';
       if (this.dgSelectedLocataireId === id) this.dgSelectedLocataireId = '';
       this.persist();
-      this.dirty = true;
       toast('Locataire supprimé', 'success');
     },
 
@@ -1125,10 +1151,6 @@ export function appData() {
         }),
       );
       this.persist();
-      // Pas de `this.dirty = true` ici : la génération d'une quittance pousse une entrée
-      // dans l'historique (journal append-only) mais ne modifie ni les bailleurs, ni les
-      // biens, ni les locataires — l'utilisateur n'a pas besoin d'exporter immédiatement
-      // après chaque PDF. La bannière n'apparaît que sur les modifs de patrimoine.
     },
 
     // Construit le PDF selon la décision du dialogue doublon. Retourne
@@ -1411,8 +1433,6 @@ export function appData() {
           }),
         );
         this.persist();
-        // Pas de `this.dirty = true` ici : même logique que pour les quittances — la
-        // génération d'un reçu DG ne modifie pas le patrimoine, juste le journal historique.
         return { doc, filename, sousType, bailleur, locataire: loc, dateEvenement, reissued: false };
       } catch (err) {
         console.error(err);
@@ -1577,9 +1597,6 @@ export function appData() {
       if (!ok) return;
       this.data.historique.splice(idx, 1);
       this.persist();
-      // Pas de `this.dirty = true` ici : cohérent avec la position « historique = journal,
-      // pas patrimoine ». L'utilisateur vient de confirmer une suppression explicite ; pas
-      // besoin de lui rappeler d'exporter.
       toast('Entrée supprimée', 'success');
     },
 
@@ -1652,7 +1669,6 @@ export function appData() {
       a.download = `quittances_backup_${dateStr}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      this.dirty = false;
       this.lastExport = new Date().toISOString();
       saveLastExport(this.lastExport);
       toast('Export téléchargé', 'success');
@@ -1694,7 +1710,6 @@ export function appData() {
       this.dgSelectedBailleurId = soloId;
       this.dgSelectedLocataireId = '';
       this.persist();
-      this.dirty = false;
       this.resetFiltresHistorique();
       toast('Données importées', 'success');
     },

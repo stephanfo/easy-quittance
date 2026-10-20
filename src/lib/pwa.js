@@ -1,3 +1,5 @@
+import { loadWelcomeSeen } from './storage.js';
+
 export const INSTALL_DISMISS_KEY = 'quittance_pwa_install_dismissed';
 const INSTALL_BANNER_DELAY_MS = 3000;
 
@@ -89,13 +91,20 @@ function buildInstallBanner({ onInstall, onDismiss, description, installLabel = 
   return root;
 }
 
+// Pas de bannière d'installation par-dessus l'écran d'accueil de la première visite :
+// on attend sa fermeture (événement émis par closeWelcome dans app.js).
+function afterWelcome(fn) {
+  if (loadWelcomeSeen()) fn();
+  else window.addEventListener('quittance:welcome-closed', fn, { once: true });
+}
+
 export function setupInstallPrompt() {
   if (typeof window === 'undefined') return;
 
   const safari = safariInstallPlatform(navigator.userAgent, navigator.maxTouchPoints);
   if (safari) {
     if (!shouldShowInstallBanner({ standalone: isStandalone(), dismissed: isDismissed() })) return;
-    setTimeout(() => {
+    afterWelcome(() => setTimeout(() => {
       const root = buildInstallBanner({
         description:
           'Safari efface les données des sites non ouverts depuis 7 jours. Installez l’app pour les protéger : ' +
@@ -108,7 +117,7 @@ export function setupInstallPrompt() {
         onDismiss: () => root.remove(),
       });
       document.body.appendChild(root);
-    }, INSTALL_BANNER_DELAY_MS);
+    }, INSTALL_BANNER_DELAY_MS));
     return;
   }
 
@@ -127,7 +136,7 @@ export function setupInstallPrompt() {
       return;
     }
 
-    setTimeout(() => {
+    afterWelcome(() => setTimeout(() => {
       if (!deferredPrompt) return;
 
       const root = buildInstallBanner({
@@ -145,7 +154,7 @@ export function setupInstallPrompt() {
       });
 
       document.body.appendChild(root);
-    }, INSTALL_BANNER_DELAY_MS);
+    }, INSTALL_BANNER_DELAY_MS));
   });
 
   window.addEventListener('appinstalled', () => {

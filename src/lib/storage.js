@@ -97,36 +97,53 @@ export const STORAGE_THRESHOLDS = {
 
 // ----- Sauvegarde : suivi du dernier export + stockage persistant -----
 
-// Clé séparée de `quittances_data` : la date du dernier export n'a pas à figurer dans le JSON
-// exporté. Si Safari (ITP) purge l'origine, cette clé part avec les données — cohérent.
+// Clés séparées de `quittances_data` : ces dates n'ont pas à figurer dans le JSON exporté.
+// Si le navigateur purge l'origine (Safari ITP, nettoyage), elles partent avec les données — cohérent.
 const LAST_EXPORT_KEY = 'quittance_last_export';
-// Au-delà de ce délai sans export, l'UI rappelle à l'utilisateur de sauvegarder.
-export const BACKUP_REMINDER_DAYS = 30;
+const LAST_CHANGE_KEY = 'quittance_last_change';
+// Écran d'accueil vu (affiché une seule fois, réaffichable depuis l'app).
+const WELCOME_SEEN_KEY = 'quittance_welcome_seen';
 
-export function loadLastExport() {
+function readKey(key) {
   try {
-    return localStorage.getItem(LAST_EXPORT_KEY) || '';
+    return localStorage.getItem(key) || '';
   } catch {
     return '';
   }
 }
 
-export function saveLastExport(iso) {
+function writeKey(key, value) {
   try {
-    localStorage.setItem(LAST_EXPORT_KEY, iso);
+    localStorage.setItem(key, value);
   } catch {
-    // Pas bloquant : le rappel réapparaîtra simplement plus tôt.
+    // Pas bloquant : au pire un rappel ou l'écran d'accueil réapparaît.
   }
 }
 
-// Pure. `lastExport` : ISO (date ou datetime) ou ''. `hasData` : faux si rien à sauvegarder.
-// Renvoie { daysSince (null si jamais exporté), stale }.
-export function backupStatus({ lastExport, hasData, today = new Date(), thresholdDays = BACKUP_REMINDER_DAYS }) {
-  const last = lastExport ? new Date(lastExport) : null;
-  const valid = last && !Number.isNaN(last.getTime());
-  const daysSince = valid ? Math.max(0, Math.floor((today - last) / 86400000)) : null;
-  const stale = Boolean(hasData) && (daysSince === null || daysSince >= thresholdDays);
-  return { daysSince, stale };
+export const loadLastExport = () => readKey(LAST_EXPORT_KEY);
+export const saveLastExport = (iso) => writeKey(LAST_EXPORT_KEY, iso);
+export const loadLastChange = () => readKey(LAST_CHANGE_KEY);
+export const saveLastChange = (iso) => writeKey(LAST_CHANGE_KEY, iso);
+export const loadWelcomeSeen = () => readKey(WELCOME_SEEN_KEY) === '1';
+export const saveWelcomeSeen = () => writeKey(WELCOME_SEEN_KEY, '1');
+
+// Timestamp (ms) d'une date ISO, ou null si absente / invalide.
+function toTime(iso) {
+  const t = iso ? new Date(iso).getTime() : NaN;
+  return Number.isNaN(t) ? null : t;
+}
+
+// Pure. `lastExport` / `lastChange` : ISO (date ou datetime) ou ''. `hasData` : faux si rien à sauvegarder.
+// Renvoie { daysSince (jours depuis le dernier export, null si jamais exporté), pending }.
+// `pending` : des données n'existent que dans ce navigateur (jamais exporté, ou modifiées après
+// le dernier export). Une date de modification inconnue (données antérieures au suivi) compte
+// comme une modification : mieux vaut un rappel de trop qu'une perte.
+export function backupStatus({ lastExport, lastChange, hasData, today = new Date() }) {
+  const exportedAt = toTime(lastExport);
+  const changedAt = toTime(lastChange);
+  const daysSince = exportedAt === null ? null : Math.max(0, Math.floor((today - exportedAt) / 86400000));
+  const pending = Boolean(hasData) && (exportedAt === null || changedAt === null || changedAt > exportedAt);
+  return { daysSince, pending };
 }
 
 // Statut du stockage persistant (Storage API) : 'granted' | 'denied' | 'unsupported'.

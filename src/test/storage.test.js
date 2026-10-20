@@ -1,10 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   buildArchivedCopy,
   cutoffYearsAgo,
   STORAGE_THRESHOLDS,
   backupStatus,
-  BACKUP_REMINDER_DAYS,
+  loadLastExport,
+  saveLastExport,
+  loadLastChange,
+  saveLastChange,
+  loadWelcomeSeen,
+  saveWelcomeSeen,
 } from '../lib/storage.js';
 
 describe('cutoffYearsAgo', () => {
@@ -77,32 +82,103 @@ describe('STORAGE_THRESHOLDS', () => {
 describe('backupStatus', () => {
   const today = new Date('2026-10-04T12:00:00Z');
 
-  it('jamais exporté + données → stale, daysSince null', () => {
-    expect(backupStatus({ lastExport: '', hasData: true, today })).toEqual({ daysSince: null, stale: true });
-  });
-
-  it('aucune donnée → jamais stale', () => {
-    expect(backupStatus({ lastExport: '', hasData: false, today }).stale).toBe(false);
-  });
-
-  it('export récent → pas stale', () => {
-    expect(backupStatus({ lastExport: '2026-09-30T08:00:00Z', hasData: true, today })).toEqual({
-      daysSince: 4,
-      stale: false,
+  it('jamais exporté + données → pending, daysSince null', () => {
+    expect(backupStatus({ lastExport: '', lastChange: '2026-10-01T08:00:00Z', hasData: true, today })).toEqual({
+      daysSince: null,
+      pending: true,
     });
   });
 
-  it('stale à partir du seuil', () => {
-    expect(BACKUP_REMINDER_DAYS).toBe(30);
-    expect(backupStatus({ lastExport: '2026-09-04T12:00:00Z', hasData: true, today }).stale).toBe(true);
-    expect(backupStatus({ lastExport: '2026-09-05T12:00:00Z', hasData: true, today }).stale).toBe(false);
+  it('aucune donnée → jamais pending', () => {
+    expect(backupStatus({ lastExport: '', lastChange: '2026-10-01T08:00:00Z', hasData: false, today }).pending).toBe(false);
   });
 
-  it('date invalide → traitée comme jamais exporté', () => {
-    expect(backupStatus({ lastExport: 'n/a', hasData: true, today })).toEqual({ daysSince: null, stale: true });
+  it('modifié après le dernier export → pending', () => {
+    expect(
+      backupStatus({ lastExport: '2026-09-30T08:00:00Z', lastChange: '2026-10-02T09:00:00Z', hasData: true, today }),
+    ).toEqual({ daysSince: 4, pending: true });
   });
 
-  it('date future → daysSince 0', () => {
-    expect(backupStatus({ lastExport: '2027-01-01', hasData: true, today }).daysSince).toBe(0);
+  it('exporté après la dernière modification → pas pending, quel que soit l’âge de l’export', () => {
+    expect(
+      backupStatus({ lastExport: '2026-09-30T08:00:00Z', lastChange: '2026-09-30T07:59:00Z', hasData: true, today }),
+    ).toEqual({ daysSince: 4, pending: false });
+    expect(
+      backupStatus({ lastExport: '2025-01-01T08:00:00Z', lastChange: '2024-12-31T08:00:00Z', hasData: true, today }).pending,
+    ).toBe(false);
+  });
+
+  it('modification à la même milliseconde que l’export → pas pending', () => {
+    const t = '2026-10-04T10:00:00.000Z';
+    expect(backupStatus({ lastExport: t, lastChange: t, hasData: true, today }).pending).toBe(false);
+  });
+
+  it('date de modification inconnue (données antérieures au suivi) → pending', () => {
+    expect(backupStatus({ lastExport: '2026-09-30T08:00:00Z', lastChange: '', hasData: true, today }).pending).toBe(true);
+    expect(backupStatus({ lastExport: '2026-09-30T08:00:00Z', lastChange: 'n/a', hasData: true, today }).pending).toBe(true);
+  });
+
+  it('date d’export invalide → traitée comme jamais exporté', () => {
+    expect(backupStatus({ lastExport: 'n/a', lastChange: '2026-10-01T08:00:00Z', hasData: true, today })).toEqual({
+      daysSince: null,
+      pending: true,
+    });
+  });
+
+  it('date d’export future → daysSince 0', () => {
+    expect(backupStatus({ lastExport: '2027-01-01', lastChange: '2026-10-01', hasData: true, today })).toEqual({
+      daysSince: 0,
+      pending: false,
+    });
+  });
+});
+
+describe('dates de sauvegarde et écran d’accueil (localStorage)', () => {
+  let store;
+  beforeEach(() => {
+    store = new Map();
+    vi.stubGlobal('localStorage', {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('valeurs par défaut quand rien n’est mémorisé', () => {
+    expect(loadLastExport()).toBe('');
+    expect(loadLastChange()).toBe('');
+    expect(loadWelcomeSeen()).toBe(false);
+  });
+
+  it('mémorise dernier export, dernière modification et écran d’accueil vu', () => {
+    saveLastExport('2026-10-04T10:00:00.000Z');
+    saveLastChange('2026-10-04T11:00:00.000Z');
+    saveWelcomeSeen();
+    expect(loadLastExport()).toBe('2026-10-04T10:00:00.000Z');
+    expect(loadLastChange()).toBe('2026-10-04T11:00:00.000Z');
+    expect(loadWelcomeSeen()).toBe(true);
+  });
+
+  it('les clés restent hors de quittances_data (absentes du JSON exporté)', () => {
+    saveLastExport('x');
+    saveLastChange('y');
+    saveWelcomeSeen();
+    expect(store.has('quittances_data')).toBe(false);
+    expect([...store.keys()].sort()).toEqual(['quittance_last_change', 'quittance_last_export', 'quittance_welcome_seen']);
+  });
+
+  it('localStorage indisponible → lectures neutres, écritures silencieuses', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('SecurityError');
+      },
+      setItem: () => {
+        throw new Error('QuotaExceededError');
+      },
+    });
+    expect(loadLastChange()).toBe('');
+    expect(loadWelcomeSeen()).toBe(false);
+    expect(() => saveLastChange('2026-10-04')).not.toThrow();
+    expect(() => saveWelcomeSeen()).not.toThrow();
   });
 });

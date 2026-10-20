@@ -29,7 +29,8 @@ C'est exactement ce que fait cet outil. Stockage `localStorage`, génération PD
 - ✏️ **Override mensuel** : modifier ponctuellement le loyer ou les charges pour un mois donné
 - 📧 **Préparation d'email** : ouvre votre client mail avec sujet et corps pré-remplis (PDF à attacher manuellement)
 - 📋 **Historique unifié** : journal local de toutes les quittances et reçus DG émis, alerte anti-doublon, regénération à l'identique du PDF, filtres type/bailleur/bien/locataire/année, export XLSX
-- 💾 **Export / import JSON** : sauvegarde et restauration de toutes vos données (validées par schéma)
+- 💾 **Export / import JSON** : sauvegarde et restauration de toutes vos données (validées par schéma), avec rappel discret tant que des modifications n'ont pas été exportées
+- 👋 **Écran d'accueil** à la première visite (réaffichable via le bouton ℹ️) : ce que fait l'outil, où vivent vos données, comment les sauvegarder
 - 📊 **Onglet Configuration** : jauge de l'espace de stockage local utilisé (alerte à 70 %, critique à 90 %) avec bouton d'archivage des entrées d'historique de plus de 2 ans pour libérer de l'espace
 - 🔢 **Conversion automatique** du montant en lettres (exigence légale)
 - ♿ **Accessible** : navigation clavier WAI-ARIA sur les onglets, modales avec focus trap, contraste WCAG AAA sur le texte secondaire
@@ -67,7 +68,7 @@ npm run test:watch    # vitest en mode watch
 2. Onglet **Locataires** : ajoutez vos locataires en choisissant le bien loué (loyer, charges, mode de règlement par défaut, dépôt de garantie ; co-occupants si colocation).
 3. Onglet **Quittance** : sélectionnez un bailleur puis un locataire, un mois, ajustez la période ou le mode de règlement si besoin, puis cliquez sur « Télécharger la quittance PDF ».
 4. Onglet **Dépôt de garantie** (optionnel) : générez le reçu d'encaissement à la signature du bail, puis le reçu de restitution à la sortie (avec détail des retenues éventuelles en texte riche).
-5. Onglet **Configuration** (optionnel) : surveillez l'espace de stockage local, archivez l'historique ancien pour libérer de l'espace.
+5. Onglet **Configuration** : exportez vos données (le bandeau « Modifications non exportées » vous le rappelle), surveillez l'espace de stockage local, archivez l'historique ancien pour libérer de l'espace.
 
 ## Hébergement
 
@@ -87,6 +88,7 @@ Aucune configuration serveur n'est nécessaire au-delà du service de fichiers s
 - Aucun cookie, aucun analytics, aucun tracker.
 - Toutes les dépendances (jsPDF, Alpine.js) sont embarquées dans le bundle au build — aucun appel CDN à l'exécution.
 - Effacer les données du navigateur = effacer toutes vos données. **Pensez à exporter régulièrement** depuis l'onglet Configuration.
+- Seules trois petites informations techniques sont gardées à côté de vos données, dans le même navigateur : la date du dernier export, la date de la dernière modification et le fait d'avoir vu l'écran d'accueil. Elles ne figurent pas dans le fichier exporté.
 
 ## Sauvegarde
 
@@ -96,6 +98,10 @@ Vos données vivent dans le `localStorage` de votre navigateur, qui peut être e
 - un changement de navigateur ou d'appareil
 
 **Utilisez régulièrement le bouton « Exporter les données »** (onglet Configuration). Cela télécharge un fichier JSON que vous pouvez sauvegarder sur votre cloud, votre disque dur, ou ailleurs. Le bouton « Importer les données » permet de restaurer ce fichier sur le même ou un autre navigateur.
+
+L'app vous aide à ne pas oublier :
+- **Écran d'accueil** : à la première visite, il rappelle que les données restent dans le navigateur et qu'il faut les exporter. Il revient si le navigateur a tout effacé (pour vous inviter à importer votre sauvegarde) et reste accessible via le bouton ℹ️ en haut à droite.
+- **Rappel d'export** : dès qu'une donnée change après votre dernier export (bailleur, bien, locataire, quittance ou reçu générés, réglages, import), un bandeau discret « Modifications non exportées » s'affiche sous le titre, avec un bouton **Exporter** qui télécharge directement la sauvegarde. Le ✕ le masque jusqu'à la prochaine visite. L'onglet Configuration indique la date du dernier export et de la dernière modification.
 
 ## Roadmap
 
