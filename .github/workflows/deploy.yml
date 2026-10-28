@@ -28,6 +28,9 @@ jobs:
       - run: npm ci
       - run: npm run test
       - run: npm run build
+        env:
+          # Active canonical, Open Graph, JSON-LD, robots.txt et sitemap (cf. vite.config.js).
+          SITE_URL: https://easy-quittance.ratelet.fr/
 
       - uses: actions/configure-pages@v5
         with:

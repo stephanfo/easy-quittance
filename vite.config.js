@@ -5,11 +5,64 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// Référencement de l'instance publique, activé par SITE_URL (workflow GitHub Pages). Sans lui
+// (build local, auto-hébergement), rien n'est ajouté : une copie privée n'a pas à se présenter
+// aux moteurs comme l'originale — le .htaccess fourni désactive d'ailleurs l'indexation.
+const siteUrl = process.env.SITE_URL?.replace(/\/?$/, '/');
+
+function referencement() {
+  const description =
+    'Quittances de loyer et reçus de dépôt de garantie en PDF, conformes à la loi : gratuit, sans compte ni cloud, vos données restent dans votre navigateur.';
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Easy Quittance',
+    description,
+    url: siteUrl,
+    sameAs: 'https://github.com/stephanfo/easy-quittance',
+    applicationCategory: 'FinanceApplication',
+    operatingSystem: 'Web',
+    isAccessibleForFree: true,
+    license: 'https://www.gnu.org/licenses/agpl-3.0.html',
+    // Même @id que sur le site de l'auteur : les moteurs relient ses projets à une seule personne.
+    author: { '@type': 'Person', '@id': 'https://stephane.ratelet.fr/#me', name: 'Stéphane Ratelet', url: 'https://stephane.ratelet.fr/' },
+  };
+  const meta = (property, content) => ({ tag: 'meta', attrs: { property, content }, injectTo: 'head' });
+  return {
+    name: 'referencement',
+    apply: 'build',
+    transformIndexHtml() {
+      if (!siteUrl) return [];
+      return [
+        { tag: 'link', attrs: { rel: 'canonical', href: siteUrl }, injectTo: 'head' },
+        meta('og:type', 'website'),
+        meta('og:url', siteUrl),
+        meta('og:title', 'Easy Quittance — quittances de loyer gratuites'),
+        meta('og:description', description),
+        meta('og:image', `${siteUrl}pwa-512x512.png`),
+        meta('og:locale', 'fr_FR'),
+        { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary' }, injectTo: 'head' },
+        { tag: 'script', attrs: { type: 'application/ld+json' }, children: JSON.stringify(jsonLd), injectTo: 'head' },
+      ];
+    },
+    generateBundle() {
+      if (!siteUrl) return;
+      this.emitFile({ type: 'asset', fileName: 'robots.txt', source: `User-agent: *\nAllow: /\n\nSitemap: ${siteUrl}sitemap.xml\n` });
+      this.emitFile({
+        type: 'asset',
+        fileName: 'sitemap.xml',
+        source: `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${siteUrl}</loc></url></urlset>\n`,
+      });
+    },
+  };
+}
+
 export default defineConfig({
   root: 'src',
   base: './',
   publicDir: resolve(__dirname, 'public'),
   plugins: [
+    referencement(),
     VitePWA({
       registerType: 'prompt',
       injectRegister: false,

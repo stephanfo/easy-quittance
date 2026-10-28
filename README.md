@@ -39,7 +39,7 @@ C'est exactement ce que fait cet outil. Stockage `localStorage`, génération PD
 
 ## Démo
 
-🚀 **Essayez l'app en ligne : [stephanfo.github.io/easy-quittance](https://stephanfo.github.io/easy-quittance/)**
+🚀 **Essayez l'app en ligne : [easy-quittance.ratelet.fr](https://easy-quittance.ratelet.fr/)**
 
 L'app est hébergée sur GitHub Pages (déploiement automatique à chaque release). Chaque visiteur a son propre `localStorage` dans son navigateur — vos données restent chez vous, rien n'est partagé entre utilisateurs ni envoyé à un serveur.
 

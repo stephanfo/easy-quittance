@@ -11,7 +11,7 @@
   <link rel="icon" href="./favicon.ico" sizes="48x48" />
   <link rel="icon" href="./icon.svg" sizes="any" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="./apple-touch-icon-180x180.png" />
-  <title>Quittances & Dépôt de garantie</title>
+  <title>Easy Quittance — quittances de loyer gratuites, sans compte ni cloud</title>
 </head>
 <body class="p-0 sm:p-5" x-data="app" x-cloak>
 
@@ -1037,7 +1037,11 @@
           <button type="button" class="font-medium underline" @click="closeWelcome(); switchTab('configuration')">Configuration</button>,
           et gardez le fichier en lieu sûr. Une sauvegarde existante se restaure au même endroit (« Importer les données »).
         </p>
-        <div class="flex justify-end">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-xs text-apple-muted">
+            Logiciel libre de <a class="underline" href="https://stephane.ratelet.fr/" target="_blank" rel="noopener">Stéphane Ratelet</a>
+            · <a class="underline" href="https://github.com/stephanfo/easy-quittance" target="_blank" rel="noopener">code source</a>
+          </p>
           <button type="button" id="welcome-start" class="btn" @click="closeWelcome()">C’est compris</button>
         </div>
       </div>
